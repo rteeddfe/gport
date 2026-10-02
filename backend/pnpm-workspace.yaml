@@ -1,0 +1,7 @@
+onlyBuiltDependencies:
+  - "@prisma/client"
+  - "@prisma/engines"
+  - prisma
+  - esbuild
+  - "@embedded-postgres/windows-x64"
+  - embedded-postgres

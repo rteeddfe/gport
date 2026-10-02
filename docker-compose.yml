@@ -1,0 +1,42 @@
+# Local development infrastructure.
+#
+#   docker compose up -d              -> PostgreSQL only (backend runs on the host)
+#   docker compose --profile full up  -> PostgreSQL + backend in containers
+#
+# The frontend is not containerized: run it with `pnpm dev` (see README).
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: marketplace-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: marketplace
+    ports:
+      - "55432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d marketplace"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  backend:
+    profiles: ["full"]
+    build: ./backend
+    container_name: marketplace-backend
+    environment:
+      PORT: 3001
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/marketplace
+      JWT_SECRET: change-me-in-production
+      CORS_ORIGIN: http://localhost:3000
+      NODE_ENV: production
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
