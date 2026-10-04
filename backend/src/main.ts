@@ -2,11 +2,14 @@ import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import helmet from 'helmet';
+import { createRequire } from 'node:module';
 import { AppModule } from './app.module.js';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
 import { TimeoutInterceptor } from './common/interceptors/timeout.interceptor.js';
 import { buildApiValidationPipe } from './common/pipes/api-validation-pipe.js';
+
+const require = createRequire(import.meta.url);
+const helmet = require('helmet');
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
