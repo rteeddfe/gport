@@ -57,26 +57,23 @@ async function createHandler() {
   return handler;
 }
 
-/** Vercel routes every /api/* and /files/:id request here via the rewrites
- * in vercel.json; the helper hands the function the original request URL.
- * Some routing modes instead append the matched segments as "...path" query
- * params — strip those when present, because the global ValidationPipe
- * (whitelist + forbidNonWhitelisted) rejects unknown query props. */
+/** The routing layer also appends the matched segments as query params —
+ * "...path" or "path" depending on the mode. No API route uses either
+ * name, so strip both: the global ValidationPipe (whitelist +
+ * forbidNonWhitelisted) rejects unknown query props. */
 function normalizeVercelUrl(url: string): string {
   const [pathname, search = ''] = url.split('?');
-  const path = pathname.startsWith('/api/files/')
-    ? pathname.slice('/api'.length)
-    : pathname;
   if (!search) {
-    return path;
+    return pathname;
   }
   const params = new URLSearchParams(search);
-  if (!params.has('...path')) {
-    return `${path}?${search}`;
+  if (!params.has('...path') && !params.has('path')) {
+    return `${pathname}?${search}`;
   }
   params.delete('...path');
+  params.delete('path');
   const cleanSearch = params.toString();
-  return cleanSearch ? `${path}?${cleanSearch}` : path;
+  return cleanSearch ? `${pathname}?${cleanSearch}` : pathname;
 }
 
 export default async function vercelHandler(
@@ -86,8 +83,9 @@ export default async function vercelHandler(
   const app = await createHandler();
 
   req.url = normalizeVercelUrl(req.url ?? '/');
-  if (req.query && '...path' in req.query) {
+  if (req.query) {
     delete (req.query as Record<string, unknown>)['...path'];
+    delete (req.query as Record<string, unknown>).path;
   }
 
   app(req, res);
