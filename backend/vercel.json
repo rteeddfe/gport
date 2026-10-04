@@ -2,14 +2,18 @@
   "version": 2,
   "buildCommand": "pnpm build",
   "functions": {
-    "api/**": {
+    "api/index.ts": {
       "maxDuration": 60
     }
   },
   "rewrites": [
     {
+      "source": "/api/:path*",
+      "destination": "/api/index"
+    },
+    {
       "source": "/files/:id",
-      "destination": "/api/files/:id"
+      "destination": "/api/index"
     }
   ]
 }

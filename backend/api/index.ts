@@ -57,12 +57,11 @@ async function createHandler() {
   return handler;
 }
 
-/** Vercel filesystem routing passes the catch-all segments to the function
- * as "...path" query params on req.url; the global ValidationPipe
- * (whitelist + forbidNonWhitelisted) rejects unknown query props, so strip
- * them before handing the request to Express. Rewritten /files/:id requests
- * arrive as /api/files/:id — the Nest global prefix excludes exactly
- * 'files/:id', so map them back. */
+/** Vercel routes every /api/* and /files/:id request here via the rewrites
+ * in vercel.json; the helper hands the function the original request URL.
+ * Some routing modes instead append the matched segments as "...path" query
+ * params — strip those when present, because the global ValidationPipe
+ * (whitelist + forbidNonWhitelisted) rejects unknown query props. */
 function normalizeVercelUrl(url: string): string {
   const [pathname, search = ''] = url.split('?');
   const path = pathname.startsWith('/api/files/')
