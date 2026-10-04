@@ -57,14 +57,38 @@ async function createHandler() {
   return handler;
 }
 
+/** Vercel filesystem routing passes the catch-all segments to the function
+ * as "...path" query params on req.url; the global ValidationPipe
+ * (whitelist + forbidNonWhitelisted) rejects unknown query props, so strip
+ * them before handing the request to Express. Rewritten /files/:id requests
+ * arrive as /api/files/:id — the Nest global prefix excludes exactly
+ * 'files/:id', so map them back. */
+function normalizeVercelUrl(url: string): string {
+  const [pathname, search = ''] = url.split('?');
+  const path = pathname.startsWith('/api/files/')
+    ? pathname.slice('/api'.length)
+    : pathname;
+  if (!search) {
+    return path;
+  }
+  const params = new URLSearchParams(search);
+  if (!params.has('...path')) {
+    return `${path}?${search}`;
+  }
+  params.delete('...path');
+  const cleanSearch = params.toString();
+  return cleanSearch ? `${path}?${cleanSearch}` : path;
+}
+
 export default async function vercelHandler(
   req: Request,
   res: Response,
 ): Promise<void> {
   const app = await createHandler();
 
-  if (req.query?.path) {
-    delete req.query.path;
+  req.url = normalizeVercelUrl(req.url ?? '/');
+  if (req.query && '...path' in req.query) {
+    delete (req.query as Record<string, unknown>)['...path'];
   }
 
   app(req, res);

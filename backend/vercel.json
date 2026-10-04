@@ -1,4 +1,15 @@
 {
   "version": 2,
-  "buildCommand": "pnpm build"
+  "buildCommand": "pnpm build",
+  "functions": {
+    "api/**": {
+      "maxDuration": 60
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/files/:id",
+      "destination": "/api/files/:id"
+    }
+  ]
 }
