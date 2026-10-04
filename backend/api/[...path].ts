@@ -62,5 +62,10 @@ export default async function vercelHandler(
   res: Response,
 ): Promise<void> {
   const app = await createHandler();
+
+  if (req.query?.path) {
+    delete req.query.path;
+  }
+
   app(req, res);
 }
