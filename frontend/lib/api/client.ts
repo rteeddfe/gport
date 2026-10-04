@@ -3,6 +3,20 @@ import type { ApiErrorShape } from "./types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api";
 
+/**
+ * In the browser every call goes through the same-origin /api proxy
+ * (rewrites in next.config.ts): the session cookies then land on the
+ * storefront origin as first-party, so proxy.ts can see them and no
+ * cross-site cookie policy is involved. On the server (RSC pages) the
+ * call goes straight to the API origin.
+ */
+const resolveApiBaseUrl = (): string => {
+  if (typeof window === "undefined") {
+    return API_BASE_URL;
+  }
+  return API_BASE_URL.replace(/^https?:\/\/[^/]+/, "");
+};
+
 export type ApiMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
 
 interface ApiRequestOptions<TBody> extends Omit<RequestInit, "body"> {
@@ -28,7 +42,7 @@ export async function apiFetch<TResponse, TBody = unknown>(
 let refreshInFlight: Promise<boolean> | null = null;
 
 function refreshSession(): Promise<boolean> {
-  refreshInFlight ??= fetch(`${API_BASE_URL}/auth/refresh`, {
+  refreshInFlight ??= fetch(`${resolveApiBaseUrl()}/auth/refresh`, {
     method: "POST",
     credentials: "include",
   }).then(
@@ -51,7 +65,7 @@ async function request<TResponse, TBody>(
   const isFormData =
     typeof FormData !== "undefined" && body instanceof FormData;
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(`${resolveApiBaseUrl()}${path}`, {
     ...rest,
     cache,
     credentials: "include",
