@@ -10,7 +10,6 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
-import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { CartService } from '../cart/cart.service.js';
 import { CART_COOKIE } from '../cart/cart.controller.js';
@@ -33,8 +32,7 @@ import { AuthService, type AuthResult } from './auth.service.js';
 import { LoginDto } from './dto/login.dto.js';
 import { RegisterDto } from './dto/register.dto.js';
 
-/** Stricter than the global limit: slows credential stuffing and enumeration. */
-const AUTH_THROTTLE = { default: { limit: 10, ttl: 60_000 } };
+
 
 /** Profile-only body: the tokens themselves travel as httpOnly cookies. */
 interface SessionResponse {
@@ -51,7 +49,6 @@ export class AuthController {
   ) {}
 
   @Public()
-  @Throttle(AUTH_THROTTLE)
   @Post('register')
   async register(
     @Body() dto: RegisterDto,
@@ -65,7 +62,6 @@ export class AuthController {
   }
 
   @Public()
-  @Throttle(AUTH_THROTTLE)
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(
