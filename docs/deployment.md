@@ -24,14 +24,18 @@ Create a database on a managed provider. Copy the connection string, e.g.
 
 - Push the repo; create a service from `backend/` (Node build) or deploy the
   provided `backend/Dockerfile`.
-- Build command: `pnpm install && pnpm build` · Start command: `pnpm start:prod`
-  (Docker image runs `prisma migrate deploy` before start automatically).
+- Build command: `pnpm install && pnpm build` · Start command: `pnpm start:prod`.
+  Run `pnpm prisma migrate deploy` as a release step before each start
+  (the Docker image does not migrate on start; the compose `migrate` service
+  does it for the local full-stack profile).
 - Environment:
   - `DATABASE_URL` — connection string from step 1
   - `JWT_SECRET` — long random value (`openssl rand -base64 48`)
   - `CORS_ORIGIN` — will be the frontend URL (step 3); set it after deploying
     the frontend, then redeploy the backend
-  - `NODE_ENV=production`
+  - `TRUST_PROXY` — set to `1` when the backend runs behind one reverse-proxy
+    hop (PaaS default), so rate limiting sees real client IPs
+  - `NODE_ENV=production` — also disables the Swagger UI (`/api/docs`)
 - Run migrations once: `pnpm prisma migrate deploy` (from `backend/`).
 - Optionally seed demo data: `pnpm prisma db seed`.
 

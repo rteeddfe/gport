@@ -1,9 +1,20 @@
-# Digital Marketplace — Platform Skeleton
+# GPort — Online Store for Digital Gaming Goods
 
-Technical foundation for a digital-goods marketplace platform. This repository
-contains the **architecture skeleton only**: frontend + backend + database +
-API + tests + deployment setup. Business features (cart, payments, file
-delivery, seller system, etc.) are built on top of this base.
+Technical foundation of an **ordinary online store for digital gaming goods
+and services**. The store itself is the seller of every item in the catalog —
+this is **not a marketplace**: there are no third-party sellers, seller
+accounts, storefronts, commissions or seller payouts anywhere in the business
+model. (The string `marketplace` in a few technical identifiers — the seed
+login `admin@marketplace.local` and the local database name — is a leftover
+artifact of the early skeleton name and means nothing about the business
+model.)
+
+Status of business features:
+
+- **Implemented:** catalog (categories, products with attributes), cart
+  (guest + user, merge on login), promo codes, search suggestions.
+- **Planned — domain model and API NOT approved yet:** orders, payments /
+  acquiring, fulfillment, top-up services (Steam etc.), advanced roles.
 
 ```
 Next.js (frontend)  --REST/JSON-->  NestJS (backend)  --Prisma-->  PostgreSQL
@@ -59,7 +70,7 @@ cd backend
 cp .env.example .env          # defaults match docker-compose / dev-db (port 55432)
 pnpm install                 # runs `prisma generate` automatically
 pnpm db:migrate:deploy       # apply migrations
-pnpm db:seed                 # 1 user, 2 categories, 3 products
+pnpm db:seed                 # 1 admin, 2 categories, 3 products, 1 promo code
 pnpm start:dev               # http://localhost:3001
 ```
 
@@ -76,12 +87,16 @@ pnpm dev                     # http://localhost:3000
 
 | URL                              | Expected                                  |
 | -------------------------------- | ----------------------------------------- |
-| http://localhost:3000            | “Digital Marketplace — Frontend is running” + API/Backend/Database status: OK |
+| http://localhost:3000            | Home page + API/Backend/Database status: OK (the page title still shows the legacy placeholder text "Digital Marketplace — Frontend is running" — frontend code, not yet rebranded) |
 | http://localhost:3000/products   | Seeded product list (Server Component → REST → DB) |
 | http://localhost:3001/api/health | `{"status":"ok","database":"up",...}`     |
 | http://localhost:3001/api/docs   | Swagger UI                                |
 
-Seed accounts: `admin@marketplace.local` / `admin1234` (role ADMIN).
+Seed accounts (development-only credentials, never use them in production):
+
+- `admin@marketplace.local` / `admin1234` — role SUPER_ADMIN (`marketplace`
+  in the address is a technical artifact of the early skeleton name)
+- `admin@gport.local` / `admin1234` — role ADMIN
 
 ## Commands
 
@@ -115,20 +130,33 @@ Seed accounts: `admin@marketplace.local` / `admin1234` (role ADMIN).
 ## API overview
 
 Base URL: `http://localhost:3001/api` (interactive docs: `/api/docs`).
+Full map with filters and response shapes: [docs/api.md](docs/api.md).
 
 ```
 GET    /api/health              # liveness + database status
-GET    /api/products            # paginated list (?page=&limit=&status=&search=)
-GET    /api/products/:id
-POST   /api/products            # ADMIN (JWT)
-PATCH  /api/products/:id        # ADMIN (JWT)
-DELETE /api/products/:id        # ADMIN (JWT)
 GET    /api/categories
+GET    /api/products            # catalog: ?page=&limit=&search=&categorySlug=&
+                                #   region=&platform=&genre=&priceMin=&priceMax=&sort=
+GET    /api/products/:slug      # product card + related
+GET    /api/search/suggest?q=
+GET    /api/cart                # guest (cart_token cookie) or user (JWT)
+POST   /api/cart/items          # { productId, quantity? }
+PATCH  /api/cart/items/:itemId  # { quantity }
+DELETE /api/cart/items/:itemId
+DELETE /api/cart                # clear
+POST   /api/cart/promo          # { code }
+DELETE /api/cart/promo
 POST   /api/auth/register       # { email, password, name? } -> { accessToken, user }
-POST   /api/auth/login
+POST   /api/auth/login          # also merges the guest cart into the user
 POST   /api/auth/logout
 GET    /api/auth/me             # JWT required
+# ADMIN (JWT):
+GET|POST|PATCH|DELETE /api/admin/products[...]
+GET|POST|PATCH|DELETE /api/admin/promo-codes[...]
 ```
+
+Orders, payments and top-up endpoints are **not implemented** — their domain
+model is not designed yet (see docs/business/ and docs/api.md).
 
 Errors use one predictable shape:
 
@@ -161,5 +189,6 @@ PostgreSQL → Render/Railway backend → Vercel frontend → CORS → health ch
 - [docs/development.md](docs/development.md) — workflow for day-to-day tasks
 - [docs/deployment.md](docs/deployment.md) — production deployment runbook
 - [docs/references.md](docs/references.md) — official documentation links
+- [docs/business/](docs/business/README.md) — business processes (purchase flows): requirements, one document per flow
 
 [AGENTS.md](AGENTS.md) contains the project rules for AI coding agents.

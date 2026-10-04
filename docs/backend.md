@@ -13,16 +13,20 @@ src/
   database/              # PrismaModule (global), PrismaService (adapter-pg)
   common/
     decorators/          # @Public, @Roles, @CurrentUser
-    guards/              # JwtAuthGuard (global), RolesGuard (global)
+    guards/              # JwtAuthGuard (global), RolesGuard (global),
+                         # OptionalJwtAuthGuard (cart: guest or user)
     filters/             # AllExceptionsFilter -> { statusCode, message, errors? }
     pipes/               # buildApiValidationPipe (whitelist/forbidNonWhitelisted/transform)
     interceptors/        # TimeoutInterceptor
-    utils/               # slugify
+    utils/               # slugify, cookies (guest-cart cookie helpers)
     types/               # AuthUser
   auth/                  # controller, service, dto/, strategies/jwt.strategy.ts
   users/                 # service (used by auth + jwt strategy)
-  products/              # full CRUD reference implementation
+  products/              # public catalog (list + slug detail w/ related)
   categories/            # read-only list
+  cart/                  # guest/user cart: items, promo, totals, merge on login
+  promo-codes/           # admin CRUD + discount helpers used by cart
+  search/                # GET /api/search/suggest (header search hints)
   health/                # GET /api/health (api + database status)
   generated/prisma/      # generated client (gitignored)
 prisma/                  # schema.prisma, migrations/, seed.ts
@@ -45,7 +49,7 @@ to start without them.
 ## Conventions
 
 - **Auth**: global `JwtAuthGuard` + `@Public()` for open routes;
-  `RolesGuard` + `@Roles(Role.ADMIN)` for write operations. JWT payload:
+  `RolesGuard` + `@Roles(Role.ADMIN)` for admin operations. JWT payload:
   `{ sub, email, role }`, strategy reloads the user from DB on every request.
 - **Validation**: every request body/query goes through DTOs with
   class-validator decorators. The pipe returns field-keyed errors:
@@ -58,6 +62,57 @@ to start without them.
   (nest-cli.json). Mark auth endpoints with `@ApiBearerAuth()`.
 - **Rate limiting**: ThrottlerGuard globally (100 req/min per IP) via
   ThrottlerModule.
+
+## Roles — implemented
+
+**Implemented (in the code):** the Prisma `Role` enum has three members:
+
+- `SUPER_ADMIN` — full administrative access. Enforced centrally in the
+  global `RolesGuard`: it passes **any** `@Roles(...)` /
+  `@RequirePermissions(...)` check and never depends on stored permissions.
+  User management, site settings, home content, policies and FAQ admin APIs
+  are `@Roles(Role.SUPER_ADMIN)`-only.
+- `ADMIN` — administrative role. Domain routes carry
+  `@RequirePermissions('products' | 'posts' | 'reviews' | 'promo-codes')`
+  (constants in `common/constants/admin-permissions.ts`; `products` covers
+  the categories tab too). An ADMIN must hold every listed permission; the
+  permission set lives in `User.permissions String[]` and is reloaded by
+  `JwtStrategy` on every request, so grants/revocations apply immediately.
+  Permissions are managed by SUPER_ADMIN via `/api/admin/users` (the
+  «Пользователи» tab). File uploads stay open to any ADMIN (shared upload
+  infra for blog covers and settings images).
+- `USER` — buyer. Gets `403` on any role- or permission-protected route.
+
+Registration always creates a `USER`. The role and permissions in a JWT
+payload are informational only: `JwtStrategy` reloads the user from the
+database on every request, so an access change takes effect on the very next
+request — an old token can never grant more than what is currently stored.
+
+Safety rails in `UsersService`: a SUPER_ADMIN account cannot be modified or
+deleted, and a SUPER_ADMIN cannot change their own role (protects against
+complete lock-out). Session revocation (`DELETE /admin/users/:id/sessions`,
+single or all) marks the stored refresh tokens revoked — the user is signed
+out everywhere once their 15-minute access token expires.
+
+**Not implemented yet (do not build without a request):** assigning the
+`SUPER_ADMIN` role through the API (only USER↔ADMIN), OAuth providers.
+
+## Authentication — implemented vs not
+
+**Implemented:** register, login, `GET /auth/me`, cookie session — the
+backend sets httpOnly `access_token` (15-min JWT, also accepted as
+`Authorization: Bearer` for tooling) and `refresh_token` (7-day opaque
+random token, only its SHA-256 hash is stored; rotated on every
+`POST /auth/refresh`, revoked on `POST /auth/logout`). `Secure` is added in
+production. Auth responses carry only the profile, never tokens.
+
+**Not implemented (planned, no design yet):** "revoke all sessions" for a
+user (rows are per-device, so mass revocation is a service method away),
+reuse-theft detection (revoked-token replay should kill the whole family),
+and OAuth login (Telegram / Yandex / VK). The future OAuth model must
+link every login method to **one** user account — never one user per method.
+The implementation shape (cookies, session storage, revocation mechanics) is
+deliberately undesigned until the corresponding design stage.
 
 ## Adding a new domain module (recipe)
 
@@ -84,5 +139,8 @@ pnpm build        # nest build -> dist/
 pnpm start:prod   # node dist/main.js
 ```
 
-`backend/Dockerfile` builds a production image that runs
-`prisma migrate deploy` before starting the server.
+`backend/Dockerfile` is multi-stage: the runner stage installs production
+dependencies only (dev/toolchain packages and their advisories never reach the
+runtime image) and runs as a non-root user. Database migrations run via the
+docker-compose `migrate` service or a PaaS release command — not at container
+start.

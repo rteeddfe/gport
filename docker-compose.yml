@@ -1,7 +1,7 @@
 # Local development infrastructure.
 #
 #   docker compose up -d              -> PostgreSQL only (backend runs on the host)
-#   docker compose --profile full up  -> PostgreSQL + backend in containers
+#   docker compose --profile full up  -> migrate + backend in containers
 #
 # The frontend is not containerized: run it with `pnpm dev` (see README).
 services:
@@ -22,6 +22,20 @@ services:
       timeout: 5s
       retries: 12
 
+  # One-shot migration job; the backend container starts only after it succeeds.
+  migrate:
+    profiles: ["full"]
+    build:
+      context: ./backend
+      target: build
+    command: ["pnpm", "prisma", "migrate", "deploy"]
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/marketplace
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   backend:
     profiles: ["full"]
     build: ./backend
@@ -35,8 +49,8 @@ services:
     ports:
       - "3001:3001"
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
 volumes:
   postgres-data:

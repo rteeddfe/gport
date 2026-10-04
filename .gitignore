@@ -1,26 +1,7 @@
-# Dependencies
-node_modules/
-
-# Environment / secrets
-.env
-.env.local
-.env.*.local
-
-# Build output
-dist/
-.next/
-out/
-
-# Test coverage
-coverage/
-
-# Generated code
-backend/src/generated/
-
-# Local databases / caches
-.pgdata/
-*.tsbuildinfo
-
-# OS / editor
+# OS junk
 .DS_Store
 Thumbs.db
+Desktop.ini
+
+# editor droppings
+*.swp

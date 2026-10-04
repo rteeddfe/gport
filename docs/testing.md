@@ -30,8 +30,10 @@ components using routers need a `next/navigation` mock.
 - E2E specs live in `backend/test/` and run with `pnpm test:e2e`
   (`vitest.config.e2e.ts`): the full AppModule boots with `PrismaService`
   overridden by a mock, then real HTTP requests hit the app through supertest.
-- Existing tests: `health.service.spec.ts`, `health.controller.spec.ts`
-  (unit), `test/app.e2e-spec.ts` (`GET /api/health`).
+- Existing tests: unit specs next to the code — `health.service.spec.ts`,
+  `health.controller.spec.ts`, `products.service.spec.ts`, `cart.service.spec.ts`,
+  `promo-codes.service.spec.ts` (pure discount/validation helpers covered
+  there); e2e `test/app.e2e-spec.ts` (`GET /api/health`).
 
 Rules of thumb: mock `PrismaService` for tests that must not touch the
 database; keep e2e independent of external services; seed-dependent e2e tests

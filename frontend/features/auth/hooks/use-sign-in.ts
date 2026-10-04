@@ -1,14 +1,14 @@
 "use client";
 
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { signIn } from "@/services/auth.service";
-import { useAuthStore } from "@/stores/auth-store";
+import { ME_QUERY_KEY } from "./use-me";
 
 export function useSignIn() {
-  const setAuth = useAuthStore((state) => state.setAuth);
+  const queryClient = useQueryClient();
   const mutation = useMutation({
     mutationFn: signIn,
-    onSuccess: ({ accessToken, user }) => setAuth(accessToken, user),
+    onSuccess: ({ user }) => queryClient.setQueryData(ME_QUERY_KEY, user),
   });
 
   return {

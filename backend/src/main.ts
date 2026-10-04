@@ -12,7 +12,22 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
 
-  app.setGlobalPrefix('api');
+  // File URLs are stored host-relative (/files/:id) and must resolve on the
+  // API origin without the /api prefix (the storefront proxies that path).
+  app.setGlobalPrefix('api', { exclude: ['files/:id'] });
+
+  // Behind a reverse proxy (PaaS, nginx) this makes req.ip — and therefore the
+  // rate limiter — see the real client IP. Opt-in via TRUST_PROXY (e.g. "1").
+  const trustProxy = configService.get<boolean | number | string | undefined>(
+    'trustProxy',
+  );
+  if (trustProxy !== undefined) {
+    const expressApp = app.getHttpAdapter().getInstance() as {
+      set(name: string, value: unknown): void;
+    };
+    expressApp.set('trust proxy', trustProxy);
+  }
+
   app.use(helmet());
   app.enableCors({
     origin: configService.get<string[]>('corsOrigins') ?? [],
@@ -22,24 +37,28 @@ async function bootstrap(): Promise<void> {
   app.useGlobalFilters(new AllExceptionsFilter());
   app.useGlobalInterceptors(new TimeoutInterceptor());
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('Digital Marketplace API')
-    .setDescription('REST API for the digital marketplace platform')
-    .setVersion('0.1.0')
-    .addBearerAuth()
-    .build();
-  SwaggerModule.setup(
-    'api/docs',
-    app,
-    SwaggerModule.createDocument(app, swaggerConfig),
-  );
+  // API surface must not be disclosed in production deployments.
+  const isProduction = configService.get<string>('NODE_ENV') === 'production';
+  if (!isProduction) {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('GPort API')
+      .setDescription('REST API for the GPort digital games store')
+      .setVersion('0.2.0')
+      .addBearerAuth()
+      .build();
+    SwaggerModule.setup(
+      'api/docs',
+      app,
+      SwaggerModule.createDocument(app, swaggerConfig),
+    );
+  }
 
   app.enableShutdownHooks();
 
   const port = configService.get<number>('port') ?? 3001;
   await app.listen(port);
   new Logger('Bootstrap').log(
-    `API ready at http://localhost:${port}/api (Swagger: /api/docs)`,
+    `API ready at http://localhost:${port}/api${isProduction ? '' : ' (Swagger: /api/docs)'}`,
   );
 }
 

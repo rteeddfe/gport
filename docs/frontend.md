@@ -24,7 +24,7 @@ lib/
   api/{client,errors,types}.ts   # fetch wrapper, ApiError, response types
   utils.ts                       # cn()
 services/                  # auth, products, categories, health services
-stores/                    # zustand: auth-store (in-memory token), ui-store
+stores/                    # zustand: ui-store (client-only UI state)
 schemas/                   # zod: auth.schema.ts, product.schema.ts
 types/                     # api.ts (DTO mirrors)
 providers/                 # query-provider.tsx
@@ -54,10 +54,12 @@ component → React Query hook (features/*/hooks) → services/*.service.ts → 
 ## State management
 
 - React Query owns all server data (see `features/*/hooks/use-*.ts`).
-- Zustand only for client-only state. `useAuthStore` intentionally keeps the
-  JWT in memory (module scope) — nothing sensitive in localStorage. Planned
-  upgrade: httpOnly refresh cookie + silent refresh; the store shape will not
-  change.
+- Zustand only for client-only state. The auth session is not stored
+  client-side at all: tokens ride in httpOnly cookies set by the backend,
+  `useMe` (React Query over `GET /auth/me`) is the profile source of truth,
+  and `lib/api/client.ts` performs one silent `POST /auth/refresh` on a 401
+  and replays the request. `proxy.ts` (Next 16 middleware) guards `/admin`
+  and `/dashboard` by refresh-cookie presence.
 - Forms: React Hook Form + `zodResolver` + schemas from `schemas/`. Forms use
   `noValidate` so Zod (not native HTML5 validation) owns error display.
 

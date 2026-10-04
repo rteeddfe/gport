@@ -1,6 +1,5 @@
 import { ApiError } from "./errors";
 import type { ApiErrorShape } from "./types";
-import { useAuthStore } from "@/stores/auth-store";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api";
 
@@ -13,27 +12,61 @@ interface ApiRequestOptions<TBody> extends Omit<RequestInit, "body"> {
 }
 
 /**
- * Single entry point for all backend calls: base URL, JSON, credentials,
- * Authorization header and error normalization live here. Services call
- * this — components never call fetch directly.
+ * The session rides in httpOnly cookies (set/cleared by the backend auth
+ * endpoints) — credentials: "include" attaches them and no token is ever
+ * held in JS storage. On a 401 the client tries one silent refresh and
+ * replays the original request once.
  */
 export async function apiFetch<TResponse, TBody = unknown>(
   path: string,
   options: ApiRequestOptions<TBody> = {},
 ): Promise<TResponse> {
+  return request<TResponse, TBody>(path, options, true);
+}
+
+/** Single-flight: concurrent 401s share one refresh round-trip. */
+let refreshInFlight: Promise<boolean> | null = null;
+
+function refreshSession(): Promise<boolean> {
+  refreshInFlight ??= fetch(`${API_BASE_URL}/auth/refresh`, {
+    method: "POST",
+    credentials: "include",
+  }).then(
+    (response) => response.ok,
+    () => false,
+  ).finally(() => {
+    refreshInFlight = null;
+  });
+  return refreshInFlight;
+}
+
+async function request<TResponse, TBody>(
+  path: string,
+  options: ApiRequestOptions<TBody>,
+  allowRefreshRetry: boolean,
+): Promise<TResponse> {
   const { body, headers, cache = "no-store", ...rest } = options;
-  const token = useAuthStore.getState().token;
+  // FormData (admin uploads) goes out verbatim — the browser sets the
+  // multipart boundary header itself.
+  const isFormData =
+    typeof FormData !== "undefined" && body instanceof FormData;
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...rest,
     cache,
     credentials: "include",
     headers: {
-      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(body !== undefined && !isFormData
+        ? { "Content-Type": "application/json" }
+        : {}),
       ...headers,
     },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body:
+      body === undefined
+        ? undefined
+        : isFormData
+          ? (body as unknown as BodyInit)
+          : JSON.stringify(body),
   });
 
   if (response.status === 204) {
@@ -43,10 +76,18 @@ export async function apiFetch<TResponse, TBody = unknown>(
   const payload: unknown = await response.json().catch(() => null);
 
   if (!response.ok) {
-    const shape = (payload ?? {}) as Partial<ApiErrorShape>;
-    if (response.status === 401) {
-      useAuthStore.getState().clear();
+    // Failed credential submissions must surface as-is (and not spend the
+    // auth endpoints' throttle budget on a pointless refresh attempt).
+    const credentialFailure = path === "/auth/login" || path === "/auth/register";
+    if (
+      response.status === 401 &&
+      allowRefreshRetry &&
+      !credentialFailure &&
+      (await refreshSession())
+    ) {
+      return request<TResponse, TBody>(path, options, false);
     }
+    const shape = (payload ?? {}) as Partial<ApiErrorShape>;
     throw new ApiError(
       response.status,
       shape.message ?? `Request failed with status ${response.status}`,

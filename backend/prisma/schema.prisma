@@ -1,6 +1,5 @@
-// Minimal marketplace schema: proves the full backend -> DB pipeline and is
-// ready to grow (Cart, Order, OrderItem, Payment, Download, ...) without
-// structural changes. See docs/database.md.
+// Digital games store schema. Currently covers catalog + cart; orders,
+// payments and top-up services are designed separately (see docs/database.md).
 
 generator client {
   provider = "prisma-client"
@@ -14,6 +13,7 @@ datasource db {
 enum Role {
   USER
   ADMIN
+  SUPER_ADMIN
 }
 
 enum ProductStatus {
@@ -22,16 +22,52 @@ enum ProductStatus {
   ARCHIVED
 }
 
+enum DiscountType {
+  PERCENT
+  FIXED
+}
+
+enum PostStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum ReviewStatus {
+  PENDING
+  PUBLISHED
+  REJECTED
+}
+
 model User {
   id           String   @id @default(uuid()) @db.Uuid
   email        String   @unique
   passwordHash String
   name         String?
   role         Role     @default(USER)
+  /// Admin tab access for ADMINs, validated against ADMIN_PERMISSIONS
+  /// (products | posts | reviews | promo-codes). Ignored for USER and
+  /// bypassed for SUPER_ADMIN. Managed by SUPER_ADMIN in /admin/users.
+  permissions  String[] @default([])
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  products Product[]
+  cart          Cart?
+  refreshTokens RefreshToken[]
+}
+
+/// Opaque session tokens (only the SHA-256 hash is stored). Rotation on
+/// every refresh; revocation on logout. Rows cascade with their user.
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  tokenHash String    @unique
+  userId    String    @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([userId])
 }
 
 model Category {
@@ -46,20 +82,195 @@ model Category {
 }
 
 model Product {
-  id          String        @id @default(uuid()) @db.Uuid
-  title       String
-  slug        String        @unique
-  description String?
-  priceCents  Int
-  currency    String        @default("USD")
-  status      ProductStatus @default(DRAFT)
-  categoryId  String        @db.Uuid
-  category    Category      @relation(fields: [categoryId], references: [id])
-  sellerId    String?       @db.Uuid
-  seller      User?         @relation(fields: [sellerId], references: [id])
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id            String        @id @default(uuid()) @db.Uuid
+  title         String
+  slug          String        @unique
+  description   String?
+  instruction   String?
+  region        String?
+  platform      String?
+  genre         String[]
+  localization  String?
+  ageRating     String?
+  images        String[]
+  priceCents    Int
+  oldPriceCents Int?
+  /// Available quantity (digital keys/licenses) in stock.
+  stock         Int           @default(0)
+  currency      String        @default("RUB")
+  status        ProductStatus @default(DRAFT)
+  categoryId    String        @db.Uuid
+  category      Category      @relation(fields: [categoryId], references: [id])
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  cartItems CartItem[]
 
   @@index([categoryId])
   @@index([status])
+}
+
+model Cart {
+  id                 String   @id @default(uuid()) @db.Uuid
+  userId             String?  @unique @db.Uuid
+  user               User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  guestToken         String?  @unique
+  appliedPromoCodeId String?  @db.Uuid
+  promoCode          PromoCode? @relation(fields: [appliedPromoCodeId], references: [id], onDelete: SetNull)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  items CartItem[]
+}
+
+model CartItem {
+  id        String   @id @default(uuid()) @db.Uuid
+  cartId    String   @db.Uuid
+  cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  productId String   @db.Uuid
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([cartId, productId])
+  @@index([cartId])
+}
+
+model PromoCode {
+  id               String       @id @default(uuid()) @db.Uuid
+  code             String       @unique
+  discountType     DiscountType
+  // PERCENT: 1..99 (%), FIXED: amount in minor currency units (kopecks).
+  value            Int
+  isActive         Boolean      @default(true)
+  startsAt         DateTime?
+  endsAt           DateTime?
+  maxUses          Int?
+  usedCount        Int          @default(0)
+  minSubtotalCents Int?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  carts Cart[]
+}
+
+/// Singleton row (id = 1): site-wide content managed from the admin
+/// «Настройки сайта» section. All fields are public (footer contacts,
+/// metadata, robots.txt, PWA manifest) — only writes are admin-gated.
+model SiteSettings {
+  id                      Int      @id @default(1)
+  siteName                String   @default("GPort")
+  supportEmail            String   @default("support@gport.ru")
+  logoUrl                 String   @default("/logo2.png")
+  /// Array of { label, url, iconUrl? } — footer social circles.
+  socials                 Json     @default("[]")
+  seoTitle                String   @default("GPort — магазин цифровых товаров")
+  seoDescription          String   @default("Интернет-магазин цифровых игровых товаров и услуг")
+  ogImageUrl              String?
+  faviconUrl              String   @default("/icons/icon.svg")
+  /// Raw robots.txt body served verbatim by the frontend route handler.
+  robotsTxt               String   @default("User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /dashboard\n")
+  manifestName            String   @default("GPort — магазин цифровых товаров")
+  manifestShortName       String   @default("GPort")
+  manifestThemeColor      String   @default("#0B0D12")
+  manifestBackgroundColor String   @default("#0B0D12")
+  manifestIcon192Url      String   @default("/icons/icon-192.png")
+  manifestIcon512Url      String   @default("/icons/icon-512.png")
+  /// Yandex Metrika counter number (digits only); empty = counter disabled.
+  metrikaCounterId        String   @default("")
+  /// webvisor option of the Metrika counter init.
+  metrikaWebvisor         Boolean  @default(false)
+  /// Yandex Webmaster verification — the meta tag or just its content value.
+  yandexVerification      String   @default("")
+  updatedAt               DateTime @updatedAt
+}
+
+/// Singleton row (id = 1): hero-banner texts of the storefront homepage.
+model HomeContent {
+  id          Int      @id @default(1)
+  kicker      String   @default("Пополнение сервисов")
+  title       String   @default("Пополняй любимые игры")
+  titleAccent String   @default("по выгодному курсу")
+  subtitle    String   @default("")
+  ctaLabel    String   @default("Каталог игр")
+  ctaHref     String   @default("/products")
+  /// Exactly four advantage tile texts (01–04).
+  tiles       Json     @default("[\"Без ограничений, регистрации и верификации\", \"Без скрытых комиссий и платежей\", \"Моментальная доставка после оплаты\", \"Много способов оплаты\"]")
+  updatedAt   DateTime @updatedAt
+}
+
+/// Legal documents rendered on /policies/[slug]; content is sanitized
+/// rich-text HTML from the admin editor (h2/h3/b/i/lists/tables).
+model PolicyPage {
+  id        String   @id @default(uuid()) @db.Uuid
+  slug      String   @unique
+  title     String
+  content   String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Blog/news posts (admin «Блог»): the public /blog pages show PUBLISHED
+/// only; publishedAt is set automatically on the first publish.
+model Post {
+  id            String     @id @default(uuid()) @db.Uuid
+  title         String
+  slug          String     @unique
+  /// Short lead shown in the list cards; empty = no lead.
+  excerpt       String     @default("")
+  /// Plain multiline text (rendered with preserved line breaks).
+  content       String     @default("")
+  coverImageUrl String?
+  status        PostStatus @default(DRAFT)
+  publishedAt   DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@index([status, publishedAt])
+}
+
+/// Storefront reviews submitted from the public form. Every submission
+/// lands in PENDING and appears publicly only after an admin publishes it.
+/// `ip` powers the rate limits (1/minute per IP, 40/hour globally) and
+/// moderation context.
+model Review {
+  id         String       @id @default(uuid()) @db.Uuid
+  /// Display name from the form; «Гость» when left empty.
+  authorName String       @default("Гость")
+  rating     Int
+  text       String
+  status     ReviewStatus @default(PENDING)
+  ip         String?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  @@index([status, createdAt])
+  @@index([ip, createdAt])
+}
+
+/// FAQ constructor entries for the storefront FAQ block.
+model FaqItem {
+  id        String   @id @default(uuid()) @db.Uuid
+  question  String
+  answer    String
+  /// "topup" | "games" — matches the storefront filter chips.
+  category  String
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Images uploaded from the admin panel (logo, og:image, favicons);
+/// served publicly via GET /files/:id. Content-addressed by uuid —
+/// safe to cache immutably.
+model UploadedFile {
+  id        String   @id @default(uuid()) @db.Uuid
+  filename  String
+  mimeType  String
+  size      Int
+  data      Bytes
+  createdAt DateTime @default(now())
 }

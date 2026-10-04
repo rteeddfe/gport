@@ -17,6 +17,8 @@ export function signOut(): Promise<void> {
   return apiFetch<void>("/auth/logout", { method: "POST" });
 }
 
-export function me(): Promise<AuthUser> {
-  return apiFetch<AuthUser>("/auth/me");
+/** Server Components must forward the request's cookies themselves —
+ * pass { cookie: (await cookies()).toString() } from next/headers. */
+export function me(headers?: Record<string, string>): Promise<AuthUser> {
+  return apiFetch<AuthUser>("/auth/me", { headers });
 }

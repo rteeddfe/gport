@@ -4,6 +4,12 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * GPort design tokens — dark-only neon theme.
+ * Single source of truth: docs/design.md.
+ * Canvas #0B0D12 · Surface #141720 · Raised #1D212D · Border #2A3040
+ * Text #F4F5FA / #929BAF · Action #8B5CF6 · Accent #55DDE5
+ */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -39,6 +45,13 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  /* Brand tokens (direct-use palette, independent of shadcn semantics) */
+  --color-canvas: #0b0d12;
+  --color-surface: #141720;
+  --color-raised: #1d212d;
+  --color-brand: #8b5cf6;
+  --color-brand-bright: #a78bfa;
+  --color-neon: #55dde5;
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -48,83 +61,242 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* There is no light theme: :root is the one and only theme. */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-}
-
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --background: #0b0d12;
+  --foreground: #f4f5fa;
+  --card: #141720;
+  --card-foreground: #f4f5fa;
+  --popover: #1d212d;
+  --popover-foreground: #f4f5fa;
+  --primary: #8b5cf6;
+  --primary-foreground: #ffffff;
+  --secondary: #1d212d;
+  --secondary-foreground: #f4f5fa;
+  --muted: #1d212d;
+  --muted-foreground: #929baf;
+  --accent: #1d212d;
+  --accent-foreground: #f4f5fa;
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --border: #2a3040;
+  --input: #2a3040;
+  --ring: #8b5cf6;
+  --chart-1: #8b5cf6;
+  --chart-2: #55dde5;
+  --chart-3: #a78bfa;
+  --chart-4: #929baf;
+  --chart-5: #2a3040;
+  --radius: 0.75rem;
+  --sidebar: #141720;
+  --sidebar-foreground: #f4f5fa;
+  --sidebar-primary: #8b5cf6;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #1d212d;
+  --sidebar-accent-foreground: #f4f5fa;
+  --sidebar-border: #2a3040;
+  --sidebar-ring: #8b5cf6;
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
-  body {
-    @apply bg-background text-foreground;
-  }
   html {
     @apply font-sans;
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-background text-foreground;
+    background-attachment: fixed;
+    background-image:
+      radial-gradient(52rem 36rem at 12% -8%, rgb(139 92 246 / 0.13), transparent 65%),
+      radial-gradient(44rem 30rem at 88% 4%, rgb(85 221 229 / 0.07), transparent 65%),
+      radial-gradient(40rem 34rem at 50% 110%, rgb(139 92 246 / 0.08), transparent 70%);
+  }
+  ::selection {
+    background: rgb(139 92 246 / 0.35);
+  }
+}
+
+/* Signature effects of the neon theme (see docs/design.md — "Effects"). */
+
+/* Frosted surface for sticky headers, drawers, popovers.
+ * NOTE: only the standard `backdrop-filter` — the -webkit- line made
+ * Tailwind emit a Safari-only rule and drop the standard property, so
+ * Chrome rendered the header without any blur. */
+@utility glass {
+  background: color-mix(in srgb, var(--card) 62%, transparent);
+  backdrop-filter: blur(16px);
+}
+
+/* Neon glows: primary actions and accent details. */
+@utility glow-brand {
+  box-shadow:
+    0 0 24px -6px rgb(139 92 246 / 0.55),
+    0 0 64px -16px rgb(139 92 246 / 0.35);
+}
+@utility glow-neon {
+  box-shadow:
+    0 0 24px -6px rgb(85 221 229 / 0.5),
+    0 0 64px -16px rgb(85 221 229 / 0.3);
+}
+
+/* Gradient headline text (violet -> cyan). */
+@utility text-gradient {
+  background-image: linear-gradient(92deg, #a78bfa 0%, #55dde5 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+/* Gradient hairline border for hero/highlight cards (keeps --card fill). */
+@utility neon-border {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--card), var(--card)) padding-box,
+    linear-gradient(135deg, rgb(139 92 246 / 0.65), rgb(85 221 229 / 0.3)) border-box;
+}
+
+/*
+ * Hero service wall (home, majestic-style first screen): tiles stay
+ * monochrome, the hovered tile smoothly colorizes with a glow in its own
+ * brand color (--tile-glow set inline per tile). The center CTA tile is
+ * always colored; hovering it plays the hover on every tile at once,
+ * staggered by --tile-index. Tile brand colors are service imagery,
+ * not theme accents.
+ */
+.service-wall .service-tile {
+  transition:
+    transform 0.3s cubic-bezier(0, 0, 0.2, 1),
+    border-color 0.3s cubic-bezier(0, 0, 0.2, 1);
+}
+.service-wall .tile-logo {
+  transition: transform 0.3s cubic-bezier(0, 0, 0.2, 1);
+}
+.service-wall .tile-cta .tile-art {
+  filter: none;
+}
+.service-wall .service-tile:hover .tile-logo {
+  transform: scale(1.08);
+}
+.service-wall .tile-cta:hover .tile-logo {
+  transform: scale(1.12);
+}
+.service-wall .service-tile:hover .tile-name {
+  color: var(--foreground);
+}
+@media (hover: hover) {
+  /*
+   * Pre-promote tiles to compositor layers so hover transitions never
+   * trigger a promote + re-rasterize spike mid-animation: transform and
+   * filter then run on cached GPU textures instead of repainting.
+   */
+  .service-wall .service-tile {
+    will-change: transform;
+  }
+  .service-wall .tile-art {
+    filter: saturate(0) brightness(0.9);
+    /* No box-shadow transition here: the tile's overflow-hidden clips the
+       art's outer shadow entirely, so animating it only repainted an
+       invisible region every frame. */
+    transition:
+      filter 0.25s cubic-bezier(0, 0, 0.2, 1),
+      transform 0.3s cubic-bezier(0, 0, 0.2, 1);
+    will-change: filter, transform;
+  }
+  /* Mosaic card style zooms the art itself on hover. */
+  .service-wall.wall-mosaic .service-tile:hover .tile-art {
+    transform: scale(1.05);
+  }
+  .service-wall .service-tile:hover {
+    transform: translateY(-4px);
+    border-color: color-mix(in srgb, var(--tile-glow, rgb(139 92 246 / 0.5)) 45%, transparent);
+  }
+  .service-wall .service-tile:hover .tile-art {
+    filter: none;
+  }
+  /* Hovering «Посмотреть все» lights the whole wall up, staggered. */
+  .service-wall:has(.tile-cta:hover) .tile-art {
+    filter: none;
+    transition-delay: calc(var(--tile-index, 0) * 45ms);
+  }
+  .service-wall:has(.tile-cta:hover) .service-tile {
+    transform: translateY(-4px);
+    border-color: color-mix(in srgb, var(--tile-glow, rgb(139 92 246 / 0.5)) 45%, transparent);
+    transition-delay: calc(var(--tile-index, 0) * 45ms);
+  }
+}
+
+/* Slow drifting neon blobs for designed placeholder screens (topup). */
+@keyframes blob-drift {
+  from {
+    transform: translate3d(0, -14px, 0) scale(1);
+  }
+  to {
+    transform: translate3d(0, 16px, 0) scale(1.07);
+  }
+}
+.animate-blob-drift {
+  animation: blob-drift 9s ease-in-out infinite alternate;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-blob-drift {
+    animation: none;
+  }
+}
+
+/*
+ * Hero circular carousel (banner art, placeholder content). Pure CSS-3D
+ * layout: the scene provides the perspective, `.carousel-ring` keeps the
+ * slot plane (rotateY itself is driven by framer-motion in
+ * hero-carousel.tsx — auto-spin + pointer drag), each card's positioner
+ * places it on the circle and its face counter-rotates so cards always
+ * face the viewer. `--card-angle` is the static slot angle set per card
+ * from the component.
+ */
+.carousel-scene {
+  perspective: 1000px;
+}
+.carousel-ring {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+}
+.carousel-card {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform-style: preserve-3d;
+  transform: rotateY(var(--card-angle)) translateZ(240px);
+}
+.carousel-card-face {
+  width: 140px;
+  margin: -113px 0 0 -70px;
+}
+
+/*
+ * Hero backdrop flood: hidden by default, hovering the center CTA tile
+ * floods the whole first screen with a bright neon wash slightly after
+ * the tiles start lighting up. Only opacity is animated on the wrapper —
+ * blobs are self-fading radial gradients that drift and scale on their
+ * own (animate-blob-drift), so no rectangular container edges show.
+ */
+.hero-wall .hero-glow {
+  /* Pre-promoted: the flood is then a GPU alpha blend of a cached layer
+     instead of a promote + paint of the whole wash stack at hover start. */
+  will-change: opacity;
+  opacity: 0;
+  transition: opacity 0.5s cubic-bezier(0, 0, 0.2, 1);
+}
+.hero-wall:has(.tile-cta:hover) .hero-glow {
+  opacity: 1;
+  transition-delay: 0.15s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-wall .hero-glow {
+    transition: opacity 0.2s linear;
+  }
+  .hero-wall .hero-glow .animate-blob-drift {
+    animation: none;
   }
 }

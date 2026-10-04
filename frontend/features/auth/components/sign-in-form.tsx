@@ -27,12 +27,23 @@ export function SignInForm() {
   });
 
   function onSubmit(values: SignInValues) {
-    signIn(values, { onSuccess: () => router.push("/dashboard") });
+    signIn(values, {
+      onSuccess: ({ user }) =>
+        router.push(user.role === "SUPER_ADMIN" ? "/admin" : "/dashboard"),
+    });
   }
 
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} noValidate className="space-y-4">
+        {error ? (
+          <p
+            role="alert"
+            className="border-destructive/40 bg-destructive/10 text-destructive rounded-lg border px-3 py-2 text-sm"
+          >
+            {getErrorMessage(error)}
+          </p>
+        ) : null}
         <FormField
           control={form.control}
           name="email"
@@ -40,7 +51,12 @@ export function SignInForm() {
             <FormItem>
               <FormLabel>Email</FormLabel>
               <FormControl>
-                <Input type="email" placeholder="you@example.com" {...field} />
+                <Input
+                  type="email"
+                  placeholder="you@example.com"
+                  autoComplete="email"
+                  {...field}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -51,21 +67,21 @@ export function SignInForm() {
           name="password"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Password</FormLabel>
+              <FormLabel>Пароль</FormLabel>
               <FormControl>
-                <Input type="password" placeholder="••••••••" {...field} />
+                <Input
+                  type="password"
+                  placeholder="••••••••"
+                  autoComplete="current-password"
+                  {...field}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
-        {error ? (
-          <p role="alert" className="text-destructive text-sm">
-            {getErrorMessage(error)}
-          </p>
-        ) : null}
         <Button type="submit" disabled={isPending} className="w-full">
-          {isPending ? "Signing in…" : "Sign in"}
+          {isPending ? "Входим…" : "Войти"}
         </Button>
       </form>
     </Form>
