@@ -9,9 +9,13 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { cookies } from "next/headers";
+
 import { Container } from "@/components/layout/container";
 import { DashboardNav } from "@/features/account/components/dashboard-nav";
 import { cn } from "@/lib/utils";
+import { getMyOrders } from "@/services/orders.service";
+import type { OrderView } from "@/types/api";
 
 export const metadata = { title: "Достижения" };
 
@@ -23,8 +27,9 @@ interface Achievement {
   unlocked: boolean;
 }
 
-/** Static showcase — no achievements API exists yet. The list, XP values
- * and unlock rules are fish until the backend system is approved. */
+/** Buyer achievements: unlocked flags are computed from the session's
+ * real PAID orders (findMy, capped at 50 — enough for every rule below);
+ * «Исследователь» stays a playful always-on chip. */
 const ACHIEVEMENTS: Achievement[] = [
   {
     icon: UserCheck,
@@ -71,14 +76,35 @@ const ACHIEVEMENTS: Achievement[] = [
 ];
 
 /** Buyer achievements tab: a playful grid in the 404-achievement language
- * (trophy chips, XP). Placeholder data — wire to a real achievements
- * service when the feature is approved. */
-export default function AchievementsPage() {
-  const unlockedCount = ACHIEVEMENTS.filter((a) => a.unlocked).length;
-  const totalXp = ACHIEVEMENTS.filter((a) => a.unlocked).reduce(
-    (sum, a) => sum + a.xp,
-    0,
+ * (trophy chips, XP), unlocked from the session's real orders. */
+export default async function AchievementsPage() {
+  const cookieHeader = (await cookies()).toString();
+  let orders: OrderView[] = [];
+  try {
+    orders = await getMyOrders(cookieHeader ? { cookie: cookieHeader } : undefined);
+  } catch {
+    orders = [];
+  }
+  const paid = orders.filter((order) => order.status === "PAID");
+  const paidCount = paid.length;
+  const hasTopup = paid.some((order) =>
+    order.items.some((item) => item.accountIdentifier !== null),
   );
+
+  const unlocked = new Set<string>(["Свой человек", "Исследователь"]);
+  if (paidCount >= 1) unlocked.add("Первая покупка");
+  if (hasTopup) unlocked.add("Заправщик");
+  if (paidCount >= 10) unlocked.add("Коллекционер");
+  if (paidCount >= 50) unlocked.add("Легенда GPort");
+
+  const achievements = ACHIEVEMENTS.map((achievement) => ({
+    ...achievement,
+    unlocked: unlocked.has(achievement.name),
+  }));
+  const unlockedCount = achievements.filter((a) => a.unlocked).length;
+  const totalXp = achievements
+    .filter((a) => a.unlocked)
+    .reduce((sum, a) => sum + a.xp, 0);
 
   return (
     <Container>
@@ -102,7 +128,7 @@ export default function AchievementsPage() {
         </p>
 
         <ul className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {ACHIEVEMENTS.map((achievement) => (
+          {achievements.map((achievement) => (
             <li
               key={achievement.name}
               className={cn(

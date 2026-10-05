@@ -1,5 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, ProductStatus } from '../generated/prisma/client.js';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Prisma,
+  ProductFaq,
+  ProductKind,
+  ProductStatus,
+} from '../generated/prisma/client.js';
 import { slugify } from '../common/utils/slugify.js';
 import { PrismaService } from '../database/prisma.service.js';
 import type { AdminFindProductsDto } from './dto/admin-find-products.dto.js';
@@ -9,7 +14,7 @@ import type { FindProductsDto } from './dto/find-products.dto.js';
 import type { UpdateProductDto } from './dto/update-product.dto.js';
 
 export type ProductWithCategory = Prisma.ProductGetPayload<{
-  include: { category: true };
+  include: { category: true; variants: true };
 }>;
 
 export interface PaginatedProducts {
@@ -22,10 +27,14 @@ export interface PaginatedProducts {
 
 export interface ProductDetail extends ProductWithCategory {
   related: ProductWithCategory[];
+  /** Buyer FAQ of this product (public, ordered). */
+  faq: ProductFaq[];
 }
 
 const RELATED_LIMIT = 8;
 const DEFAULT_LIMIT = 10;
+
+const PRODUCT_INCLUDE = { category: true, variants: { orderBy: { sortOrder: 'asc' as const } } };
 
 function orderByFor(
   sort: ProductSort | undefined,
@@ -60,7 +69,10 @@ export class ProductsService {
   async findBySlug(slug: string): Promise<ProductDetail> {
     const product = await this.prisma.product.findUnique({
       where: { slug },
-      include: { category: true },
+      include: {
+        ...PRODUCT_INCLUDE,
+        faq: { orderBy: { sortOrder: 'asc' } },
+      },
     });
     if (!product || product.status !== ProductStatus.PUBLISHED) {
       throw new NotFoundException('Product not found');
@@ -71,17 +83,18 @@ export class ProductsService {
         categoryId: product.categoryId,
         id: { not: product.id },
       },
-      include: { category: true },
+      include: PRODUCT_INCLUDE,
       orderBy: { createdAt: 'desc' },
       take: RELATED_LIMIT,
     });
-    return { ...product, related };
+    const { faq, ...rest } = product;
+    return { ...rest, related, faq };
   }
 
   async findOne(id: string): Promise<ProductWithCategory> {
     const product = await this.prisma.product.findUnique({
       where: { id },
-      include: { category: true },
+      include: PRODUCT_INCLUDE,
     });
     if (!product) {
       throw new NotFoundException('Product not found');
@@ -91,55 +104,118 @@ export class ProductsService {
 
   async create(dto: CreateProductDto): Promise<ProductWithCategory> {
     await this.ensureCategoryExists(dto.categoryId);
+    this.ensureKindInvariants(
+      dto.kind ?? 'GAME_KEY',
+      dto.status ?? 'DRAFT',
+      dto.minValue,
+      dto.maxValue,
+      dto.variants,
+    );
+    const { variants, ...rest } = dto;
     return this.prisma.product.create({
       data: {
-        title: dto.title,
-        slug: dto.slug ?? slugify(dto.title),
-        description: dto.description ?? null,
-        instruction: dto.instruction ?? null,
-        region: dto.region ?? null,
-        platform: dto.platform ?? null,
-        genre: dto.genre ?? [],
-        localization: dto.localization ?? null,
-        ageRating: dto.ageRating ?? null,
-        images: dto.images ?? [],
-        priceCents: dto.priceCents,
-        oldPriceCents: dto.oldPriceCents ?? null,
-        stock: dto.stock,
-        currency: dto.currency ?? 'RUB',
-        status: dto.status ?? 'DRAFT',
-        categoryId: dto.categoryId,
+        title: rest.title,
+        slug: rest.slug ?? slugify(rest.title),
+        description: rest.description ?? null,
+        instruction: rest.instruction ?? null,
+        region: rest.region ?? null,
+        platform: rest.platform ?? null,
+        genre: rest.genre ?? [],
+        localization: rest.localization ?? null,
+        ageRating: rest.ageRating ?? null,
+        images: rest.images ?? [],
+        priceCents: rest.priceCents,
+        oldPriceCents: rest.oldPriceCents ?? null,
+        stock: rest.stock,
+        currency: rest.currency ?? 'RUB',
+        status: rest.status ?? 'DRAFT',
+        kind: rest.kind ?? 'GAME_KEY',
+        minValue: rest.minValue ?? null,
+        maxValue: rest.maxValue ?? null,
+        commissionPercent: rest.commissionPercent ?? 0,
+        creditingMode: rest.creditingMode ?? 'AUTO_CODE',
+        accountFieldKind: rest.accountFieldKind ?? null,
+        accountFieldLabel: rest.accountFieldLabel ?? null,
+        accountFieldHint: rest.accountFieldHint ?? null,
+        externalId: rest.externalId ?? null,
+        categoryId: rest.categoryId,
+        variants: variants
+          ? {
+              create: variants.map((variant, index) => ({
+                label: variant.label,
+                value: variant.value ?? null,
+                unit: variant.unit ?? null,
+                priceCents: variant.priceCents,
+                oldPriceCents: variant.oldPriceCents ?? null,
+                sortOrder: index,
+              })),
+            }
+          : undefined,
       },
-      include: { category: true },
+      include: PRODUCT_INCLUDE,
     });
   }
 
   async update(id: string, dto: UpdateProductDto): Promise<ProductWithCategory> {
-    await this.findOne(id);
+    const current = await this.findOne(id);
     if (dto.categoryId !== undefined) {
       await this.ensureCategoryExists(dto.categoryId);
     }
+    this.ensureKindInvariants(
+      dto.kind ?? current.kind,
+      dto.status ?? current.status,
+      dto.minValue ?? current.minValue,
+      dto.maxValue ?? current.maxValue,
+      // When the patch does not replace the variant list, the current
+      // nominals stay — validate against them.
+      dto.variants ?? current.variants,
+    );
+    const { variants, ...rest } = dto;
     return this.prisma.product.update({
       where: { id },
       data: {
-        title: dto.title,
-        slug: dto.slug,
-        description: dto.description,
-        instruction: dto.instruction,
-        region: dto.region,
-        platform: dto.platform,
-        genre: dto.genre,
-        localization: dto.localization,
-        ageRating: dto.ageRating,
-        images: dto.images,
-        priceCents: dto.priceCents,
-        oldPriceCents: dto.oldPriceCents,
-        stock: dto.stock,
-        currency: dto.currency,
-        status: dto.status,
-        categoryId: dto.categoryId,
+        title: rest.title,
+        slug: rest.slug,
+        description: rest.description,
+        instruction: rest.instruction,
+        region: rest.region,
+        platform: rest.platform,
+        genre: rest.genre,
+        localization: rest.localization,
+        ageRating: rest.ageRating,
+        images: rest.images,
+        priceCents: rest.priceCents,
+        oldPriceCents: rest.oldPriceCents,
+        stock: rest.stock,
+        currency: rest.currency,
+        status: rest.status,
+        kind: rest.kind,
+        minValue: rest.minValue,
+        maxValue: rest.maxValue,
+        commissionPercent: rest.commissionPercent,
+        creditingMode: rest.creditingMode,
+        accountFieldKind: rest.accountFieldKind,
+        accountFieldLabel: rest.accountFieldLabel,
+        accountFieldHint: rest.accountFieldHint,
+        externalId: rest.externalId,
+        categoryId: rest.categoryId,
+        variants: variants
+          ? {
+              // Full replace on save (the admin form submits the whole
+              // nominal list), display order = list order.
+              deleteMany: {},
+              create: variants.map((variant, index) => ({
+                label: variant.label,
+                value: variant.value ?? null,
+                unit: variant.unit ?? null,
+                priceCents: variant.priceCents,
+                oldPriceCents: variant.oldPriceCents ?? null,
+                sortOrder: index,
+              })),
+            }
+          : undefined,
       },
-      include: { category: true },
+      include: PRODUCT_INCLUDE,
     });
   }
 
@@ -186,7 +262,7 @@ export class ProductsService {
     const [items, total] = await Promise.all([
       this.prisma.product.findMany({
         where,
-        include: { category: true },
+        include: PRODUCT_INCLUDE,
         orderBy,
         skip: (page - 1) * limit,
         take: limit,
@@ -194,6 +270,33 @@ export class ProductsService {
       this.prisma.product.count({ where }),
     ]);
     return { items, total, page, limit, pages: Math.ceil(total / limit) };
+  }
+
+  /** Publishing rules per kind: a TOPUP_NOMINAL product needs at least
+   * one nominal, a TOPUP_AMOUNT product needs a valid range. Drafts may
+   * be incomplete. */
+  private ensureKindInvariants(
+    kind: ProductKind,
+    status: ProductStatus,
+    minValue?: number | null,
+    maxValue?: number | null,
+    variants?: { label: string; priceCents: number }[],
+  ): void {
+    if (status !== ProductStatus.PUBLISHED) {
+      return;
+    }
+    if (kind === ProductKind.TOPUP_NOMINAL && (variants?.length ?? 0) === 0) {
+      throw new BadRequestException(
+        'Добавьте хотя бы один номинал перед публикацией',
+      );
+    }
+    if (kind === ProductKind.TOPUP_AMOUNT) {
+      if (minValue == null || maxValue == null || minValue >= maxValue) {
+        throw new BadRequestException(
+          'Укажите диапазон суммы: минимум меньше максимума',
+        );
+      }
+    }
   }
 
   private async ensureCategoryExists(categoryId: string): Promise<void> {
@@ -205,6 +308,96 @@ export class ProductsService {
         message: 'Category not found',
         errors: { categoryId: ['Category does not exist'] },
       });
+    }
+  }
+
+  /** Auto-delivery stock of a product: the not-yet-sold keys (in paste
+   * order) plus counters. */
+  /** Key pool of a product for the admin form. The listing is bounded
+   * (a product can accumulate thousands of keys) while available/sold
+   * come from cheap indexed counts and stay accurate beyond the page. */
+  async listKeys(id: string): Promise<{
+    keys: { id: string; value: string; isSold: boolean }[];
+    available: number;
+    sold: number;
+  }> {
+    await this.ensureExists(id);
+    const [keys, available, sold] = await Promise.all([
+      this.prisma.productKey.findMany({
+        where: { productId: id },
+        orderBy: { createdAt: 'asc' },
+        take: 500,
+        select: { id: true, value: true, isSold: true },
+      }),
+      this.prisma.productKey.count({ where: { productId: id, isSold: false } }),
+      this.prisma.productKey.count({ where: { productId: id, isSold: true } }),
+    ]);
+    return { keys, available, sold };
+  }
+
+  /** Replaces the UNSOLD keys with the pasted list (sold keys are history
+   * and stay). Deduplicates; sold values that reappear are ignored. */
+  async replaceKeys(id: string, values: string[]): Promise<void> {
+    await this.ensureExists(id);
+    const seen = new Set<string>();
+    const fresh: string[] = [];
+    for (const value of values) {
+      const clean = value.trim();
+      if (clean.length === 0 || seen.has(clean)) continue;
+      seen.add(clean);
+      fresh.push(clean);
+    }
+    await this.prisma.$transaction([
+      this.prisma.productKey.deleteMany({
+        where: { productId: id, isSold: false },
+      }),
+      this.prisma.productKey.createMany({
+        data: fresh.map((value) => ({ productId: id, value })),
+      }),
+    ]);
+  }
+
+  /** Per-product FAQ (admin): full replace on save, display order =
+   * list order. */
+  async listFaq(id: string): Promise<ProductFaq[]> {
+    await this.ensureExists(id);
+    return this.prisma.productFaq.findMany({
+      where: { productId: id },
+      orderBy: { sortOrder: 'asc' },
+    });
+  }
+
+  async replaceFaq(
+    id: string,
+    items: { question: string; answer: string }[],
+  ): Promise<void> {
+    await this.ensureExists(id);
+    const clean = items
+      .map((item) => ({
+        question: item.question.trim(),
+        answer: item.answer.trim(),
+      }))
+      .filter((item) => item.question.length > 0 && item.answer.length > 0);
+    await this.prisma.$transaction([
+      this.prisma.productFaq.deleteMany({ where: { productId: id } }),
+      this.prisma.productFaq.createMany({
+        data: clean.map((item, index) => ({
+          productId: id,
+          question: item.question,
+          answer: item.answer,
+          sortOrder: index,
+        })),
+      }),
+    ]);
+  }
+
+  private async ensureExists(id: string): Promise<void> {
+    const product = await this.prisma.product.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!product) {
+      throw new NotFoundException('Product not found');
     }
   }
 }

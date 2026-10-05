@@ -19,10 +19,15 @@ const resolveApiBaseUrl = (): string => {
 
 export type ApiMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
 
-interface ApiRequestOptions<TBody> extends Omit<RequestInit, "body"> {
+interface ApiRequestOptions<TBody> extends Omit<RequestInit, "body" | "next"> {
   /** Serialized to JSON automatically. */
   body?: TBody;
   method?: ApiMethod;
+  /** Next Data Cache controls for server-rendered GETs: pass
+   * `{ tags: ["products"] }` and the response is cached until a matching
+   * revalidateTag (admin mutations call the revalidateStorefrontTags
+   * server action). Ignored in the browser. */
+  next?: { tags?: string[]; revalidate?: number };
 }
 
 /**
@@ -59,29 +64,43 @@ async function request<TResponse, TBody>(
   options: ApiRequestOptions<TBody>,
   allowRefreshRetry: boolean,
 ): Promise<TResponse> {
-  const { body, headers, cache = "no-store", ...rest } = options;
+  const { body, headers, next, ...rest } = options;
+  // Tagged requests opt into the Next Data Cache (server-rendered GETs);
+  // everything else stays no-store so session-sensitive reads are fresh.
+  const cache = next ? "force-cache" : "no-store";
   // FormData (admin uploads) goes out verbatim — the browser sets the
   // multipart boundary header itself.
   const isFormData =
     typeof FormData !== "undefined" && body instanceof FormData;
 
-  const response = await fetch(`${resolveApiBaseUrl()}${path}`, {
-    ...rest,
-    cache,
-    credentials: "include",
-    headers: {
-      ...(body !== undefined && !isFormData
-        ? { "Content-Type": "application/json" }
-        : {}),
-      ...headers,
-    },
-    body:
-      body === undefined
-        ? undefined
-        : isFormData
-          ? (body as unknown as BodyInit)
-          : JSON.stringify(body),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${resolveApiBaseUrl()}${path}`, {
+      ...rest,
+      cache,
+      next,
+      credentials: "include",
+      headers: {
+        ...(body !== undefined && !isFormData
+          ? { "Content-Type": "application/json" }
+          : {}),
+        ...headers,
+      },
+      body:
+        body === undefined
+          ? undefined
+          : isFormData
+            ? (body as unknown as BodyInit)
+            : JSON.stringify(body),
+    });
+  } catch (cause) {
+    // A dead API must be visible in server logs — RSC callers degrade
+    // gracefully with .catch(() => null) and would hide the outage.
+    if (typeof window === "undefined") {
+      console.error(`[api] network failure ${path}`, cause);
+    }
+    throw cause;
+  }
 
   if (response.status === 204) {
     return undefined as TResponse;
@@ -90,6 +109,9 @@ async function request<TResponse, TBody>(
   const payload: unknown = await response.json().catch(() => null);
 
   if (!response.ok) {
+    if (typeof window === "undefined" && response.status >= 500) {
+      console.error(`[api] ${response.status} ${path}`);
+    }
     // Failed credential submissions must surface as-is (and not spend the
     // auth endpoints' throttle budget on a pointless refresh attempt).
     const credentialFailure = path === "/auth/login" || path === "/auth/register";
@@ -107,6 +129,12 @@ async function request<TResponse, TBody>(
       shape.message ?? `Request failed with status ${response.status}`,
       shape.errors ?? {},
     );
+  }
+
+  if (payload === null) {
+    // A 2xx with unparsable JSON is a protocol breach, not empty data —
+    // returning null here would flow corrupt "success" into components.
+    throw new ApiError(response.status, "Malformed JSON response", {});
   }
 
   return payload as TResponse;

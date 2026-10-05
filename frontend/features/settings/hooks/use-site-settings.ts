@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { revalidateStorefrontTags } from "@/lib/revalidate";
 import {
   getSettings,
   updateSettings,
@@ -19,6 +20,8 @@ export function useUpdateSettings() {
   return useMutation({
     mutationFn: (input: UpdateSiteSettingsInput) => updateSettings(input),
     onSuccess: (saved) => {
+      // Settings render in the root layout (title, favicon, logo, footer).
+      void revalidateStorefrontTags(["settings"]);
       queryClient.setQueryData(SETTINGS_QUERY_KEY, saved);
     },
   });

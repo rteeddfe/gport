@@ -12,7 +12,9 @@ export interface FindReviewsParams {
 /** Public list — PUBLISHED reviews only, newest first (the homepage takes
  * the first page; /reviews paginates). */
 export function getReviews(params: FindReviewsParams = {}): Promise<Paginated<Review>> {
-  return apiFetch<Paginated<Review>>(`/reviews${buildQuery({ ...params })}`);
+  return apiFetch<Paginated<Review>>(`/reviews${buildQuery({ ...params })}`, {
+    next: { tags: ["reviews"], revalidate: 300 },
+  });
 }
 
 export interface CreateReviewInput {

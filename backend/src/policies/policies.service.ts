@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service.js';
 import { sanitizeRichText } from '../common/utils/sanitize.js';
+import { Prisma } from '../generated/prisma/client.js';
 import type { CreatePolicyDto, UpdatePolicyDto } from './dto/policy.dto.js';
 
 export interface PolicySummary {
@@ -85,16 +86,23 @@ export class PoliciesService {
           ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
         },
       });
-    } catch {
-      throw new NotFoundException('Policy page not found');
+    } catch (cause) {
+      // Only a missing row maps to 404 — an outage keeps its 500.
+      if (cause instanceof Prisma.PrismaClientKnownRequestError && cause.code === 'P2025') {
+        throw new NotFoundException('Policy page not found');
+      }
+      throw cause;
     }
   }
 
   async remove(id: string): Promise<void> {
     try {
       await this.prisma.policyPage.delete({ where: { id } });
-    } catch {
-      throw new NotFoundException('Policy page not found');
+    } catch (cause) {
+      if (cause instanceof Prisma.PrismaClientKnownRequestError && cause.code === 'P2025') {
+        throw new NotFoundException('Policy page not found');
+      }
+      throw cause;
     }
   }
 }

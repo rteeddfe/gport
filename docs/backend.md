@@ -12,20 +12,19 @@ src/
   config/                # configuration.ts (typed config), env.validation.ts (Joi)
   database/              # PrismaModule (global), PrismaService (adapter-pg)
   common/
-    decorators/          # @Public, @Roles, @CurrentUser
-    guards/              # JwtAuthGuard (global), RolesGuard (global),
-                         # OptionalJwtAuthGuard (cart: guest or user)
+    decorators/          # @Public, @Roles, @RequirePermissions, @CurrentUser
+    guards/              # ThrottlerGuard (global rate limit), JwtAuthGuard,
+                         # RolesGuard (all global, in that order)
     filters/             # AllExceptionsFilter -> { statusCode, message, errors? }
     pipes/               # buildApiValidationPipe (whitelist/forbidNonWhitelisted/transform)
     interceptors/        # TimeoutInterceptor
-    utils/               # slugify, cookies (guest-cart cookie helpers)
+    utils/               # slugify, cookies (session cookie helpers)
     types/               # AuthUser
   auth/                  # controller, service, dto/, strategies/jwt.strategy.ts
   users/                 # service (used by auth + jwt strategy)
   products/              # public catalog (list + slug detail w/ related)
-  categories/            # read-only list
-  cart/                  # guest/user cart: items, promo, totals, merge on login
-  promo-codes/           # admin CRUD + discount helpers used by cart
+  categories/            # read-only list (productsCount = PUBLISHED only)
+  promo-codes/           # admin CRUD (no public listing — codes go off-site)
   search/                # GET /api/search/suggest (header search hints)
   health/                # GET /api/health (api + database status)
   generated/prisma/      # generated client (gitignored)
@@ -36,15 +35,17 @@ test/app.e2e-spec.ts     # supertest e2e
 
 ## Environment (backend/.env, see .env.example)
 
-| Variable       | Purpose                              | Dev default                          |
-| -------------- | ------------------------------------ | ------------------------------------ |
-| `PORT`         | HTTP port                            | 3001                                 |
-| `DATABASE_URL` | PostgreSQL connection string         | postgresql://postgres:postgres@localhost:55432/marketplace |
-| `JWT_SECRET`   | HMAC secret for access tokens        | dev value (must be ≥16 chars)        |
-| `CORS_ORIGIN`  | Comma-separated allowed origins      | http://localhost:3000                |
+| Variable                  | Purpose                              | Dev default                          |
+| ------------------------- | ------------------------------------ | ------------------------------------ |
+| `PORT`                    | HTTP port                            | 3001                                 |
+| `DATABASE_URL`            | PostgreSQL connection string         | postgresql://postgres:postgres@localhost:55432/marketplace |
+| `JWT_SECRET`              | HMAC secret for access tokens        | dev value (must be ≥16 chars)        |
+| `CORS_ORIGIN`             | Comma-separated allowed origins      | http://localhost:3000                |
+| `PAYMENTS_WEBHOOK_SECRET` | Test-acquiring webhook HMAC (shared with the frontend emulator route) | dev fallback (REQUIRED ≥32 chars in production) |
+| `STOREFRONT_ORIGIN`       | Absolute storefront origin for payment redirects | first `CORS_ORIGIN` entry |
 
-`JWT_SECRET` and `DATABASE_URL` are validated at boot (Joi); the app refuses
-to start without them.
+`JWT_SECRET`, `DATABASE_URL` and (in production) `PAYMENTS_WEBHOOK_SECRET`
+are validated at boot (Joi); the app refuses to start without them.
 
 ## Conventions
 
@@ -61,7 +62,13 @@ to start without them.
 - **Swagger**: generated from DTOs via the `@nestjs/swagger` CLI plugin
   (nest-cli.json). Mark auth endpoints with `@ApiBearerAuth()`.
 - **Rate limiting**: ThrottlerGuard globally (100 req/min per IP) via
-  ThrottlerModule.
+  ThrottlerModule; sensitive routes tighten it with `@Throttle` — login
+  5/min, register 3/min, refresh 30/min, order create 5/min, payment
+  webhook 30/min, search suggest 60/min.
+- **Sessions**: refresh tokens rotate on every refresh and share a
+  `familyId`; replaying a REVOKED token revokes the whole family (reuse
+  detection — a stolen cookie kills its own session). Expired rows are
+  purged opportunistically on login.
 
 ## Roles — implemented
 
@@ -73,14 +80,16 @@ to start without them.
   User management, site settings, home content, policies and FAQ admin APIs
   are `@Roles(Role.SUPER_ADMIN)`-only.
 - `ADMIN` — administrative role. Domain routes carry
-  `@RequirePermissions('products' | 'posts' | 'reviews' | 'promo-codes')`
+  `@RequirePermissions('products' | 'orders' | 'files' | 'posts' | 'reviews' | 'promo-codes')`
   (constants in `common/constants/admin-permissions.ts`; `products` covers
   the categories tab too). An ADMIN must hold every listed permission; the
   permission set lives in `User.permissions String[]` and is reloaded by
   `JwtStrategy` on every request, so grants/revocations apply immediately.
   Permissions are managed by SUPER_ADMIN via `/api/admin/users` (the
-  «Пользователи» tab). File uploads stay open to any ADMIN (shared upload
-  infra for blog covers and settings images).
+  «Пользователи» tab). Delivered key values in admin order views are
+  SUPER_ADMIN-only (plain ADMINs with the «orders» permission see the
+  order without key values). File uploads require the «files» permission
+  (shared upload infra for blog covers and settings images).
 - `USER` — buyer. Gets `403` on any role- or permission-protected route.
 
 Registration always creates a `USER`. The role and permissions in a JWT
@@ -97,6 +106,55 @@ out everywhere once their 15-minute access token expires.
 **Not implemented yet (do not build without a request):** assigning the
 `SUPER_ADMIN` role through the API (only USER↔ADMIN), OAuth providers.
 
+## Orders & payments (direct purchase, 2026-10-05)
+
+The store is the seller; checkout is DIRECT (the cart module, its tables
+and the login merge were REMOVED on 2026-10-05 — nothing creates carts).
+Pipeline per purchase: `POST /orders`
+{ productId, quantity 1..10, provider, email? } (signed-in users) →
+validates PUBLISHED + stock + provider enabled, snapshots the price into
+the OrderItem, opens a payment session and returns `redirectUrl` → the
+buyer pays at the provider → the provider's webhook confirms → the order
+turns PAID (the AWAITING_PAYMENT→PAID claim is an atomic conditional
+update, so duplicate webhooks cannot double-issue keys), the stock
+decrements and the auto-delivery keys are assigned (`ProductKey` rows
+marked sold) — products without keys deliver their
+`instruction` text. Letters (invoice + paid/keys) go through MailService
+into the `EmailLog` outbox: **no SMTP provider yet, the rows are the
+delivery**.
+
+- `src/orders/` — `POST /orders` is **@Public since 2026-10-05**: guests
+  buy with just an email. With a session the order attaches to the user;
+  without one the email (trimmed, lowercased) finds or creates a
+  **passwordless holder account** (`User.passwordHash` is nullable) —
+  login against it fails 401, and `POST /auth/register` with the same
+  email CLAIMS the account (sets the password/name, same id) so the
+  purchases appear in the new session. Admin `GET /admin/orders` (+
+  `:id`) with `@Roles(ADMIN)` — read-only, statuses move via webhooks
+  only. Order statuses: AWAITING_PAYMENT → PAID | CANCELLED.
+- Product FAQ (2026-10-05): `ProductFaq` model (question/answer,
+  sortOrder = list order) — public detail `GET /products/:slug` carries
+  `faq`, admin `GET/PUT /admin/products/:id/faq` replaces the whole list
+  (same idiom as the keys endpoint).
+- `src/payments/` — PaymentSettings singleton (testEnabled + per-provider
+  { enabled, config }), `GET /payments/methods` (public, enabled only),
+  admin `GET/PUT /admin/payments/settings` + `GET /admin/payments/emails`
+  (@Roles SUPER_ADMIN). The TEST emulator: session token stored on the
+  order, `GET /payments/test/session/:token` (public — the token is the
+  capability), `POST /payments/webhook/test` (public) verifies an
+  HMAC-SHA256 signature over `orderId:token:status` (PAYMENTS_WEBHOOK_
+  SECRET, shared with the frontend emulator route handler) and is
+  idempotent. Real acquirers are registered in
+  `common/constants/payment-providers.ts` (Т-Банк, ЮMoney, ЮKassa,
+  CloudPayments, Robokassa — config storage only, `live: false`) and
+  integrate inside `PaymentsService.createPaymentSession`.
+- Admin key management: `GET/PUT /admin/products/:id/keys` replaces the
+  UNSOLD keys (sold rows are history); `stock` decrements on payment.
+- Product stock is NOT reserved at order creation — an abandoned payment
+  session never eats stock; concurrent last-key buys are resolved by the
+  `isSold: false` guard in the assignment query (an order may pay with
+  fewer keys assigned — the UI shows what was delivered).
+
 ## Authentication — implemented vs not
 
 **Implemented:** register, login, `GET /auth/me`, cookie session — the
@@ -105,6 +163,13 @@ backend sets httpOnly `access_token` (15-min JWT, also accepted as
 random token, only its SHA-256 hash is stored; rotated on every
 `POST /auth/refresh`, revoked on `POST /auth/logout`). `Secure` is added in
 production. Auth responses carry only the profile, never tokens.
+
+**Self-service profile (2026-10-05):** `PATCH /auth/me` updates `name` /
+`avatarUrl` (app path, `/files/:id` upload or https URL; an empty string
+clears the field) and returns the fresh profile; `POST /auth/password`
+verifies `currentPassword`, replaces the hash and revokes every other
+refresh token — the calling session stays alive. There is still no
+email-based "forgot password" flow (no mail provider).
 
 **Not implemented (planned, no design yet):** "revoke all sessions" for a
 user (rows are per-device, so mass revocation is a service method away),

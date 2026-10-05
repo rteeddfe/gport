@@ -70,6 +70,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}
     >
       <body className="flex min-h-full flex-col">
+        {/* React 19 hoists this into <head>: the Metrika script on every
+            page dials mc.yandex.ru — warm the connection early. */}
+        <link rel="preconnect" href="https://mc.yandex.ru" />
         <Providers>{children}</Providers>
         <YandexMetrika />
         <RegisterServiceWorker />

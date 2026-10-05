@@ -1,16 +1,7 @@
+import { formatDateLong } from "@/lib/format";
 import type { Review } from "@/types/api";
 
 import { Stars } from "./stars";
-
-/** Long-form ru date a review is shown with («4 октября 2026 г.») — the
- * date the review was written. Formatting happens on the server only. */
-export function formatReviewDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("ru-RU", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
-}
 
 /**
  * Published review card for /reviews: stars, text, author line with a
@@ -33,7 +24,7 @@ export function ReviewCard({ review }: { review: Review }) {
         <span className="min-w-0">
           <span className="block text-sm font-medium">{review.authorName}</span>
           <span className="text-muted-foreground block text-xs">
-            {formatReviewDate(review.createdAt)}
+            {formatDateLong(review.createdAt)}
           </span>
         </span>
       </figcaption>

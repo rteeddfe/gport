@@ -15,8 +15,8 @@ interface ImageUploadProps {
 }
 
 /** Admin image field: upload → the file lands in the DB and the field keeps
- * its public /files/:id URL. Plain <img> preview on purpose: uploads may be
- * SVG/ICO which next/image would refuse without extra config. */
+ * its public /files/:id URL. Plain <img> preview on purpose: ICO uploads
+ * are not worth the optimizer config, and SVG is banned at the API. */
 export function ImageUpload({ label, value, onChange, hint }: ImageUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -53,7 +53,7 @@ export function ImageUpload({ label, value, onChange, hint }: ImageUploadProps) 
           <input
             ref={inputRef}
             type="file"
-            accept="image/png,image/jpeg,image/webp,image/svg+xml,image/x-icon"
+            accept="image/png,image/jpeg,image/webp,image/x-icon"
             className="w-full text-xs"
             onChange={(event) => handleFile(event.target.files?.[0])}
           />

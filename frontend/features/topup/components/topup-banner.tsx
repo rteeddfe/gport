@@ -1,43 +1,127 @@
 "use client";
 
-import { Check } from "lucide-react";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Check, Loader2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Controller, useForm } from "react-hook-form";
+import { useQuery } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
 import { Form } from "@/components/ui/form";
-import { useTopupWidget } from "@/features/topup/hooks/use-topup-widget";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/utils";
+import { createBuySchema, type BuyValues } from "@/schemas/buy.schema";
+import { createOrder } from "@/services/orders.service";
+import { getPaymentMethods } from "@/services/payments.service";
+import type { HomeServiceCard } from "@/types/api";
 
-import { AmountField, CountryField, LoginField } from "./fields";
-import { PaymentPendingHint } from "./payment-pending-hint";
-import { ServiceMark } from "./service-mark";
 import { TopupLegalLine } from "./topup-legal-line";
-import { TOPUP_SERVICES } from "../widget-data";
 
 const BULLET_POINTS = [
-  "Моментальное зачисление на аккаунт",
   "Оплата картами российских банков",
+  "Зачисление после подтверждения оплаты",
   "Поддержка 24/7 — ответим в течение минуты",
 ];
 
+/** «1234,5 » / «1 234» → kopecks; a comma is accepted as the separator. */
+function parseRub(value: string): number {
+  const normalized = value.replace(/\s+/g, "").replace(",", ".");
+  const parsed = Number.parseFloat(normalized);
+  return Number.isFinite(parsed) ? Math.round(parsed * 100) : 0;
+}
+
 /**
- * Top-up block on the homepage: a gradient banner with a glass form card
- * on the left and the service showcase (big mark, bullets, other services)
- * on the right. Functional shell of the igromir.yandex.ru constructor in
- * our style — payments are not approved, so a valid submit shows the
- * "coming later" hint instead of a request.
+ * Home top-up block (section 2): a REAL checkout for the admin-picked
+ * top-up services (HomeContent.topupServices). Manual crediting by the
+ * account name — the same POST /orders flow as the product page, so the
+ * acquirer redirect, price snapshot and letters all apply. The service
+ * commission (a product property) is added on top of the entered amount.
+ * Renders nothing until services are configured in the home settings.
  */
-export function TopupBanner() {
-  const {
-    form,
-    service,
-    selectService,
-    currency,
-    setCountryDisplay,
-    setAmountDisplay,
-    total,
-    payHint,
-    submit,
-  } = useTopupWidget();
+export function TopupBanner({ services }: { services?: HomeServiceCard[] }) {
+  if (!services || services.length === 0) {
+    return null;
+  }
+  return <TopupForm services={services} />;
+}
+
+function TopupForm({ services }: { services: HomeServiceCard[] }) {
+  const [selectedId, setSelectedId] = useState(services[0]?.productId ?? "");
+  const service =
+    services.find((item) => item.productId === selectedId) ?? services[0]!;
+
+  const accountLabel = service.accountFieldLabel ?? "Аккаунт для зачисления";
+  const range = {
+    min: service.priceFromCents,
+    max: service.maxValue ?? Math.max(service.priceFromCents, 2_000_000),
+  };
+  const resolver = useMemo(
+    () => zodResolver(createBuySchema("TOPUP_AMOUNT", accountLabel, range)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the schema
+    // follows the selected service; reset below keeps the form in sync.
+    [service.productId],
+  );
+
+  const methodsQuery = useQuery({
+    queryKey: ["payment-methods"],
+    queryFn: getPaymentMethods,
+  });
+  const methods = methodsQuery.data ?? [];
+
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [isPaying, setIsPaying] = useState(false);
+  const [amountRub, setAmountRub] = useState("");
+
+  const form = useForm<BuyValues>({
+    resolver,
+    defaultValues: {
+      quantity: 1,
+      email: "",
+      provider: "",
+      amountCents: 0,
+      accountIdentifier: "",
+    },
+  });
+  const errors = form.formState.errors;
+  const amountCents = parseRub(amountRub);
+  const commissionCents = Math.round(
+    (amountCents * (service.commissionPercent ?? 0)) / 100,
+  );
+  const total = amountCents + commissionCents;
+
+  function switchService(productId: string) {
+    setSelectedId(productId);
+    setAmountRub("");
+    setServerError(null);
+    form.reset({
+      quantity: 1,
+      email: form.getValues("email"),
+      provider: form.getValues("provider"),
+      amountCents: 0,
+      accountIdentifier: "",
+    });
+  }
+
+  async function submit(values: BuyValues) {
+    setIsPaying(true);
+    setServerError(null);
+    try {
+      const order = await createOrder({
+        productId: service.productId,
+        quantity: 1,
+        amountCents: values.amountCents ?? 0,
+        accountIdentifier: values.accountIdentifier ?? "",
+        email: values.email,
+        provider: values.provider,
+      });
+      window.location.assign(order.redirectUrl);
+    } catch (cause) {
+      setServerError(cause instanceof Error ? cause.message : "Ошибка");
+      setIsPaying(false);
+    }
+  }
 
   return (
     <div className="relative overflow-hidden rounded-3xl border border-border bg-surface">
@@ -49,40 +133,134 @@ export function TopupBanner() {
         <div className="border-border/80 bg-surface/80 rounded-2xl border p-5 backdrop-blur sm:p-6">
           <div className="flex items-center gap-3">
             <span className="border-border bg-canvas grid size-10 shrink-0 place-items-center overflow-hidden rounded-xl border">
-              <ServiceMark service={service} className="size-6" scale={0.34} />
+              <ServiceMarkCard service={service} className="size-6" />
             </span>
             <div>
               <p className="text-muted-foreground text-xs">Пополнение</p>
-              <h3 className="text-base leading-tight font-bold">{service.name}</h3>
+              <h3 className="text-base leading-tight font-bold">{service.title}</h3>
             </div>
           </div>
 
           <Form {...form}>
-            <form onSubmit={submit} noValidate className="mt-4 grid gap-3">
-              <LoginField service={service} />
-              <div className="grid grid-cols-2 gap-3">
-                <CountryField onValueChange={setCountryDisplay} />
-                <AmountField withHint={false} currency={currency} onValueChange={setAmountDisplay} />
+            <form onSubmit={form.handleSubmit(submit)} noValidate className="mt-4 grid gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="topup-account">{accountLabel}</Label>
+                <Input
+                  id="topup-account"
+                  type={service.accountFieldKind === "EMAIL" ? "email" : "text"}
+                  placeholder={
+                    service.accountFieldKind === "EMAIL"
+                      ? "mail@example.com"
+                      : service.accountFieldKind === "ID"
+                        ? "123456789"
+                        : "имя аккаунта"
+                  }
+                  {...form.register("accountIdentifier")}
+                />
+                {errors.accountIdentifier ? (
+                  <p className="text-destructive text-xs">
+                    {errors.accountIdentifier.message}
+                  </p>
+                ) : null}
+                {service.accountFieldHint ? (
+                  <p className="text-muted-foreground text-xs">{service.accountFieldHint}</p>
+                ) : null}
               </div>
-              <Button type="submit" size="lg" className="h-12 w-full text-sm font-semibold">
-                Оплатить {total.toLocaleString("ru-RU")} {currency}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="topup-amount">Сумма, ₽</Label>
+                  <Input
+                    id="topup-amount"
+                    inputMode="decimal"
+                    placeholder={`от ${(range.min / 100).toLocaleString("ru-RU")}`}
+                    value={amountRub}
+                    onChange={(event) => {
+                      setAmountRub(event.target.value);
+                      form.setValue("amountCents", parseRub(event.target.value), {
+                        shouldValidate: form.formState.isSubmitted,
+                      });
+                    }}
+                  />
+                  {errors.amountCents ? (
+                    <p className="text-destructive text-xs">{errors.amountCents.message}</p>
+                  ) : null}
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="topup-email">Email для чека</Label>
+                  <Input
+                    id="topup-email"
+                    type="email"
+                    placeholder="mail@example.com"
+                    {...form.register("email")}
+                  />
+                  {errors.email ? (
+                    <p className="text-destructive text-xs">{errors.email.message}</p>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Способ оплаты</Label>
+                <Controller
+                  control={form.control}
+                  name="provider"
+                  render={({ field }) => (
+                    <RadioGroup
+                      value={field.value}
+                      onValueChange={field.onChange}
+                      className="flex flex-wrap gap-2"
+                    >
+                      {methods.map((method) => (
+                        <Label
+                          key={method.id}
+                          className={cn(
+                            "border-border bg-canvas/60 hover:border-brand/50 flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm",
+                            field.value === method.id && "border-brand/60 bg-brand/5",
+                          )}
+                        >
+                          <RadioGroupItem value={method.id} className="sr-only" />
+                          {method.name}
+                        </Label>
+                      ))}
+                    </RadioGroup>
+                  )}
+                />
+                {errors.provider ? (
+                  <p className="text-destructive text-xs">{errors.provider.message}</p>
+                ) : null}
+              </div>
+
+              {commissionCents > 0 ? (
+                <p className="text-muted-foreground text-xs">
+                  Сумма {amountCents.toLocaleString("ru-RU")} ₽ + комиссия{" "}
+                  {commissionCents.toLocaleString("ru-RU")} ₽
+                </p>
+              ) : null}
+              <Button type="submit" size="lg" className="h-12 w-full text-sm font-semibold" disabled={isPaying}>
+                {isPaying ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden />
+                ) : null}
+                Оплатить {total.toLocaleString("ru-RU")} ₽
               </Button>
+              {serverError ? (
+                <p className="text-destructive text-xs">{serverError}</p>
+              ) : null}
             </form>
           </Form>
 
-          {payHint ? <PaymentPendingHint className="mt-3" /> : null}
           <TopupLegalLine className="mt-4" />
         </div>
 
         <div>
           <div className="flex items-center gap-4">
             <span className="border-border bg-canvas grid size-20 shrink-0 place-items-center overflow-hidden rounded-3xl border">
-              <ServiceMark service={service} className="size-11" scale={0.55} />
+              <ServiceMarkCard service={service} className="size-11" />
             </span>
             <div>
-              <h3 className="text-2xl font-bold">Пополнение {service.name}</h3>
+              <h3 className="text-2xl font-bold">Пополнение {service.title}</h3>
               <p className="text-neon mt-1 text-sm font-medium">
-                от {service.priceFrom.toLocaleString("ru-RU")} ₽
+                от {(service.priceFromCents / 100).toLocaleString("ru-RU")} ₽
               </p>
             </div>
           </div>
@@ -100,18 +278,18 @@ export function TopupBanner() {
 
           <div className="mt-8">
             <p className="text-muted-foreground text-xs font-medium">Другие сервисы</p>
-            {/* All services stay in the row (the active one is highlighted),
-                so switching never reshuffles the neighbouring tiles. */}
+            {/* All configured services stay in the row (the active one is
+                highlighted), so switching never reshuffles the tiles. */}
             <div role="group" aria-label="Сервис пополнения" className="mt-2 flex flex-wrap gap-2">
-              {TOPUP_SERVICES.map((item) => {
-                const active = item.name === service.name;
+              {services.map((item) => {
+                const active = item.productId === service.productId;
                 return (
                   <button
-                    key={item.name}
+                    key={item.productId}
                     type="button"
-                    title={item.name}
+                    title={item.title}
                     aria-pressed={active}
-                    onClick={() => selectService(item.name)}
+                    onClick={() => switchService(item.productId)}
                     className={cn(
                       "grid size-11 place-items-center overflow-hidden rounded-xl border transition-all",
                       active
@@ -119,7 +297,7 @@ export function TopupBanner() {
                         : "border-border bg-canvas/60 hover:border-brand/50",
                     )}
                   >
-                    <ServiceMark service={item} className="size-5" scale={0.3} />
+                    <ServiceMarkCard service={item} className="size-5" />
                   </button>
                 );
               })}
@@ -128,5 +306,32 @@ export function TopupBanner() {
         </div>
       </div>
     </div>
+  );
+}
+
+/** Mini logo: the admin upload wins, then the product cover, then the
+ * initial letter. Uploads may be SVG — plain img on purpose. */
+function ServiceMarkCard({
+  service,
+  className,
+}: {
+  service: HomeServiceCard;
+  className?: string;
+}) {
+  const art = service.iconUrl ?? service.image;
+  if (art) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={art} alt="" className={cn("object-contain", className)} />;
+  }
+  return (
+    <span
+      className={cn(
+        "grid place-items-center font-bold text-white",
+        className,
+      )}
+      aria-hidden
+    >
+      {service.title.slice(0, 1)}
+    </span>
   );
 }

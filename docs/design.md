@@ -39,7 +39,7 @@ Implemented as Tailwind 4 utilities in `globals.css`:
 
 | Utility | Effect | Used for |
 | --- | --- | --- |
-| `glass` | 62% surface + `backdrop-blur(16px)` | Sticky header, drawers, popovers, hero cards |
+| `glass` | 62% surface + `backdrop-blur(16px)` | Fixed header, drawers, popovers, hero cards |
 | `glow-brand` | Violet neon `box-shadow` | Primary button hover, active tiles, focus highlights |
 | `glow-neon` | Cyan neon `box-shadow` | Accent details, active category tiles |
 | `text-gradient` | Violet→cyan gradient text | Hero headlines, brand wordmark |
@@ -75,9 +75,14 @@ glow. No bouncy/springy motion.
   hover lift + border brightening. Cover placeholder: violet/cyan
   gradient block, not a gray box.
 - **Badge** — pill; discount/bonus cyan; neutral status on raised.
-- **Header** — floating capsule (approved variant 5): sticky wrapper
-  (`top-0`, `px-4 pt-4`, `pointer-events-none` with the capsule itself
-  `pointer-events-auto`), capsule = `glass` + `rounded-2xl` + violet glow
+- **Header** — floating capsule (approved variant 5): FIXED to the
+  viewport since 2026-10-05 (user: «шапку не стики а fixed, остальной
+  контент на величину шапки отступ получить») — `fixed inset-x-0 top-0`,
+  `px-4 pt-4`, `pointer-events-none` with the capsule itself
+  `pointer-events-auto`; every layout rendering it offsets its content by
+  the 80 px height (`<main className="pt-20">` in (public) and
+  (dashboard), `pt-32` in (auth), `pt-20` in the root 404), capsule =
+  `glass` + `rounded-2xl` + violet glow
   shadow, 1200 px wide: logo (`public/logo2.png`) + descriptor
   «магазин цифровых товаров», menu «Каталог · Пополнение · Акции» (icon +
   text, active = raised pill with violet icon), circular search button
@@ -90,13 +95,29 @@ glow. No bouncy/springy motion.
   Витрина, Контур, Постер — demo deleted): a techy `bg-surface`
   `rounded-3xl` card with soft violet/cyan radial-gradient washes (the
   news-card cover language — grid pattern and HUD rings removed same
-  day per user request) and a circular 3D card carousel on the right
-  (`hero-carousel.tsx`, placeholder art — see below). Content: neon kicker
+  day per user request) and a pure-CSS rotating cylinder carousel on
+  the right (`hero-carousel-cylinder.tsx`, placeholder art — see
+  below; picked 2026-10-05 from five candidates staged inside the real
+  hero on a `/design/carousel` scratch page — the then-current ring,
+  «CSS Only 3D Image Carousel» by NiklasKnaack, Scroll-Driven Ring by
+  jh3y, Infinite Cover Flow by jh3y, Pure CSS Disc by thebabydino —
+  demo deleted). The cylinder: covers under a violet duotone tint (never
+  plain grayscale) with a static diagonal sheen; hover restores full
+  color, glows violet and pauses the spin; the reflections are
+  quality-5 `next/image` copies under a heavy CSS blur, faded into the
+  floor by a gradient — the reference's direction arrows dropped per
+  review, spin + hover only. Since 2026-10-05 the cylinder cards are
+  admin-managed (settings → «Главная страница» → «Крутящиеся карточки
+  первого блока»: image + link per card, max 12) — each card is a
+  whole-face link; an empty list keeps the built-in placeholder covers
+  (those render WITHOUT links). The
+  right-column art centers against the text zone (kicker → CTAs), not
+  the whole panel including the tiles. Content: neon kicker
   «Пополнение сервисов», visible `<h1>` «Пополняй любимые игры» +
   `text-gradient` «по выгодному курсу», two CTA buttons — violet «Пополнение» → `/topup` with a
   white-ring `Wallet` chip and outline «Каталог игр» (admin-managed
-  label/href, default `/products`) with a `brand/15` `Gamepad2` chip. Below, a 4-column row (2/1
-  on small screens) of advantage tiles — «Призраки» design, picked
+  label/href, default `/products`) with a `brand/15` `Gamepad2` chip. Below, a 4-column row
+  (desktop) of advantage tiles — «Призраки» design, picked
   2026-10-04 from five demos on a `/design/tiles` scratch page (demo
   deleted): each tile is `bg-canvas/70` with a short violet→cyan
   gradient tick at the top edge and a giant ghost numeral
@@ -105,6 +126,22 @@ glow. No bouncy/springy motion.
   верификации», «Без скрытых комиссий и платежей», «Моментальная
   доставка после оплаты», «Много способов оплаты». Banner staggers in
   like the wall (client component, itemVariants rise 24 px).
+  Mobile (below lg) — the «Неон и веер обложек» variant, picked
+  2026-10-05 from three demos on `/design/hero-mobile` (preview
+  deleted same day):
+  same markup/content restyled responsively only — transparent
+  full-bleed background with the variant's violet/cyan glows, first
+  screen tall (`min-h-[calc(100svh-10rem)]`), full-width stacked CTAs
+  (`justify-between`) and tiles compressed to a 2-column chip grid
+  (`text-xs`, smaller ghost numerals). Since 2026-10-05 evening the
+  mobile hero carries the SAME cylinder carousel as desktop (user:
+  same HTML elements, CSS-only adaptation, lighter on load) instead of
+  the deleted cover fan: the panel is a desktop grid (text 58% /
+  carousel 42% / tile strip) whose DOM order is mobile-first — text →
+  carousel → tiles 01–04; on phones CSS alone shrinks the ring
+  (19rem, ~112px image variants), hides the mirror layer and drops it
+  under the tiles and text in stacking. No duplicated texts or nodes:
+  both looks render the same elements.
 - **Hero service wall (home, second block)** — majestic-style poster
   wall, approved variant «Мозаика»: a frameless 7-column wall of
   posters (260 px tall on desktop since 2026-10-03 — halved per user
@@ -127,28 +164,99 @@ glow. No bouncy/springy motion.
   (Five style variants were demoed on a `/design/heroes` scratch page —
   glass, posters, neon frames, mosaic, wide — mosaic picked and the demo
   deleted.)
-- **Hero circular carousel (banner art, placeholder)** —
-  `features/home/components/hero-carousel.tsx` (client component,
-  ordered 2026-10-03: «круговая карусель с эффектом объема… пока с
-  фолбэками изображений и рыба текстом», then «сделать
-  пропорциональнее… возможность её крутить… поднять выше… часть
-  карточек скрыть за блоком… больше расстояние между карточками»):
-  8 cards (covers borrowed from the «Игровые валюты» block —
-  `public/games/*.jpg`, DEVELOPMENT-ONLY placeholder art — plus dummy
-  title «Название товара» / price «от 999 ₽») on a CSS-3D ring
-  (`.carousel-*` in `globals.css`: scene `perspective: 1000px`,
-  positioners place cards at `translateZ(240px)` (raised from 220 for
-  more air between cards, 2026-10-03), face height 226 px).
-  Rotation is a framer motion value: `useAnimationFrame` auto-spins at
-  12°/s (paused while dragging and under `prefers-reduced-motion`),
-  horizontal pointer drag adds to the same value (`DRAG_FACTOR` 0.35,
-  pointer capture, `touch-none`), and each face counter-rotates by
-  `-(angle + slot)` via `useTransform` so cards always face the viewer.
-  The ring carries a `-14°` rotateX tilt (ellipse view from above);
-  the scene is a 440 px square shifted right and up (`translate-x-12
-  -translate-y-14`) so the right-hand cards bleed past the banner's
-  `overflow-hidden` edge. Replaced the interim store-logo art on the
-  banner's right side.
+  Since 2026-10-05 the wall tiles are admin-manageable: settings →
+  «Главная страница» → «Карточки блока „Пополнение сервисов"» stores a
+  `wallCards` list (`{ imageUrl, href }`, up to 12, uploaded via the
+  `/files/:id` ImageUpload field) on the HomeContent singleton; each card
+  renders as a full-bleed image tile linking to its `href` (plain
+  `<img>` — uploads may be SVG). An empty list falls back to the built-in
+  service tiles above; the CTA tile stays in the middle either way.
+- **Direct purchase, no cart (2026-10-05, user: «корзины не будет, будет
+  просто покупка, где меньше шагов»)** — the /cart page, the header cart
+  icon and the cart feature were REMOVED the same day they were built
+  (the backend Cart module and its tables were removed too in the same
+  day's optimization pass — nothing merges guest carts anymore).
+  SAME DAY redesign of the product page, iterated live with the
+  user (final shape): `app/(public)/products/[slug]/page.tsx` opens with
+  an ABSOLUTE blurred backdrop from the cover art pulled up to the VERY
+  TOP of the viewport (`-top-20`, behind the fixed header) and limited to
+  the first screen (`h-[100svh]`), with a `bg-canvas/75` scrim and a tall
+  bottom fade blending into the page background (absolute, not fixed: the
+  public template's entrance filter makes position:fixed unreliable;
+  the blur is MINIMAL — `blur-[5px]` per user, the art stays readable).
+  TWO blocks: the product card at the left (`bg-surface/90
+  backdrop-blur` rounded-3xl — top row: the gallery capped at 360 px on
+  the left and the key facts on the right (category badge, title, price,
+  stock, then the attributes as a LIST, one row per fact), below —
+  description, activation instruction and the PER-PRODUCT FAQ accordion
+  (admin-managed, `ProductFaq`)) and the INLINE checkout at the right
+  (`checkout-form.tsx`, sticky lg:top-24 — no dialog anymore): price,
+  quantity stepper (1..min(10, stock)), receipt email (prefilled from the
+  session), payment-method radio (public `GET /payments/methods`), total
+  and «Перейти к оплате» → the order is created (price snapshot) and the
+  browser follows the returned acquirer redirect. **Guest checkout: an
+  email is enough** — no account needed; see the backend doc. Related
+  products follow below the grid, spanning both columns. **Since
+  2026-10-05 (evening, igromir.yandex.ru reference)** the checkout
+  follows the product kind (`Product.kind`): GAME_KEY — the quantity
+  stepper as before; TOPUP_NOMINAL — a nominal chip grid with per-nominal
+  prices (`ProductVariant`) instead of the stepper; TOPUP_AMOUNT — a
+  buyer-entered amount clamped to the product's min/max range; both
+  top-up kinds add the account field («Логин аккаунта»/ID/email —
+  `accountField*`) with the «товар получит кто-то другой» warning, quote
+  an «от N ₽» price on the card and hide the stock line; MANUAL products
+  show the «заказ передаётся оператору» note instead of «моментальная
+  выдача». The home page (same day) got the three catalog sections —
+  the service wall, «Игровые валюты» and «Игры» (shared
+  `catalog-section`/`catalog-grid`, one category each) — and the hero
+  cylinder became admin-managed (see the hero bullet above). The store
+  settings (acquiring) moved from «Настройки сайта» to a separate
+  SUPER_ADMIN-only admin tab `/admin/store`.
+- **Blog post page (`/blog/[slug]`, 2026-10-05)** — an in-container hero
+  sized like the home page's first screen (`h-[calc(100svh-9rem)]`,
+  `max-h-[680px]`, `rounded-3xl border-border`): the cover — posts
+  WITHOUT art get the post-card logo fallback (`/logo2.png` on the
+  violet/cyan radial washes, h-20) — under a `from-canvas via-canvas/55`
+  gradient overlay with the date, title and lead INSIDE the image
+  container, anchored to its bottom. Breadcrumbs stay above the hero;
+  below it the body and the «Все новости» link run in a centered
+  `max-w-3xl` column, then the «Другие новости» cards.
+- **Test acquiring emulator (2026-10-05)** — `/pay/test/[token]` is a
+  standalone page OUTSIDE the (public) group on purpose (no storefront
+  chrome, like a hosted bank page): «Тестовый эквайринг» card with the
+  amount, a fake test card, «Оплатить»/«Отменить». The buttons go through
+  the storefront route handler `app/api/payments/test/complete/route.ts`,
+  which plays the acquirer's server: it resolves the session by the
+  capability token, signs the callback with the shared webhook secret
+  (PAYMENTS_WEBHOOK_SECRET, dev fallback) and POSTs it to
+  `POST /payments/webhook/test` — the exact handshake a real provider
+  will use (signature + idempotency live on the backend).
+- **Buyer orders (2026-10-05)** — `/dashboard/orders` is live
+  (`features/account/components/orders-list.tsx`, React Query over
+  `GET /orders/my`): per-order card with the status badge (Ожидает
+  оплаты / Оплачен / Отменён), provider label, items with covers and
+  line prices, and the auto-delivered keys (mono block) or the
+  product's activation instruction as the fallback delivery text.
+- **Admin orders (2026-10-05)** — the nav item became «Заказы»
+  (`/admin/orders`, was the «Покупки» placeholder): OrdersManager table
+  (№, дата, покупатель, состав, сумма, провайдер, статус badge) with a
+  status filter and pagination; read-only — statuses move via payment
+  webhooks.
+- **Store settings tab (2026-10-05)** — new «Магазин» tab in the admin
+  settings section (SUPER_ADMIN-only like the rest): the test-acquiring
+  toggle, acquirer cards (Т-Банк EACQ, ЮMoney (Сбер), ЮKassa,
+  CloudPayments, Robokassa — enabled checkbox + credential fields from
+  the backend provider registry, «Интеграция в разработке» badges since
+  only the emulator is live) and the outgoing-letters card (the EmailLog
+  outbox — no SMTP yet, rows are the delivery).
+- **Profile settings (2026-10-05)** — `/dashboard/profile` is now
+  editable via `features/account/components/profile-settings.tsx`:
+  avatar (`UserAvatar` shared component shows the uploaded image or the
+  initials chip — used by the header widget and both panel sidebars),
+  name field, disabled email + role badge, and a password-change form
+  (current + new + repeat; the backend revokes every other session).
+  Saving goes through React Query mutations over `PATCH /auth/me` /
+  `POST /auth/password` and refreshes the ME cache.
 - **Reviews (home, third block)** — `features/home/components/
   reviews-section.tsx`: `SectionHeading` (cyan kicker «Отзывы» + h2
   «Что говорят игроки» with a `text-gradient` tail) over a 1/2/4-column

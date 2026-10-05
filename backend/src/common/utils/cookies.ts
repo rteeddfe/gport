@@ -1,6 +1,6 @@
 /**
- * Minimal cookie helpers so the guest-cart cookie works without adding
- * cookie-parser. Values we store (uuid tokens) are URL-safe anyway.
+ * Minimal cookie helpers (session + logout expiry) without adding
+ * cookie-parser. Values we store (uuid/byte tokens) are URL-safe anyway.
  */
 
 /** SameSite policy for every cookie. "Lax" (default) fits same-site

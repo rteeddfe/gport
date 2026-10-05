@@ -104,7 +104,7 @@ export function GeneralSettingsForm({ settings }: GeneralSettingsFormProps) {
         label="Логотип"
         value={form.watch("logoUrl")}
         onChange={(url) => form.setValue("logoUrl", url)}
-        hint="PNG/SVG, отображается в шапке и в админке"
+        hint="PNG или WebP, отображается в шапке и в админке"
       />
       {form.formState.errors.logoUrl ? (
         <p className="text-destructive text-xs">

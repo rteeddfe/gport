@@ -1,19 +1,29 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2 } from "lucide-react";
+import { Loader2, Plus } from "lucide-react";
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { Controller, useFieldArray, useForm, type Control, type FieldErrors } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   homeContentSchema,
   type HomeContentValues,
 } from "@/schemas/home-content.schema";
+import { useAdminProducts } from "@/features/admin/hooks/use-admin-products";
+import { revalidateStorefrontTags } from "@/lib/revalidate";
 import { updateHomeContent } from "@/services/home-content.service";
 import type { HomeContent } from "@/types/api";
+import { ImageUpload } from "./image-upload";
 
 interface HomeContentFormProps {
   content: HomeContent;
@@ -21,12 +31,236 @@ interface HomeContentFormProps {
 
 const TILE_LABELS = ["Тезис 01", "Тезис 02", "Тезис 03", "Тезис 04"];
 
+type CardListName = "wallCards" | "carouselCards";
+
+type ServiceListName = "topupServices" | "serviceCards";
+
+/** Editor of the service lists (the home top-up form and the service
+ * wall): each row picks a top-up product and may override its mini
+ * logo. Unknown/unpublished products silently drop out on render. */
+function ServicesField({
+  control,
+  errors,
+  name,
+  title,
+  hint,
+  emptyHint,
+  max,
+  products,
+}: {
+  control: Control<HomeContentValues>;
+  errors: FieldErrors<HomeContentValues>;
+  name: ServiceListName;
+  title: string;
+  hint: string;
+  emptyHint: string;
+  max: number;
+  products: { id: string; title: string }[];
+}) {
+  const array = useFieldArray({ control, name });
+  return (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-sm font-medium">{title}</p>
+          <p className="text-muted-foreground mt-0.5 text-xs">{hint}</p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          disabled={array.fields.length >= max || products.length === 0}
+          onClick={() => array.append({ productId: "", iconUrl: "" })}
+        >
+          <Plus className="size-4" aria-hidden />
+          Добавить сервис
+        </Button>
+      </div>
+
+      {array.fields.length > 0 ? (
+        <div className="mt-3 space-y-3">
+          {array.fields.map((field, index) => (
+            <div
+              key={field.id}
+              className="border-border bg-canvas/40 grid gap-3 rounded-xl border p-4 lg:grid-cols-[minmax(0,1fr)_200px]"
+            >
+              <div className="space-y-1.5">
+                <Label>Сервис (товар пополнения)</Label>
+                <Controller
+                  control={control}
+                  name={`${name}.${index}.productId` as const}
+                  render={({ field: productField }) => (
+                    <Select value={productField.value} onValueChange={productField.onChange}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Выберите сервис" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {products.map((product) => (
+                          <SelectItem key={product.id} value={product.id}>
+                            {product.title}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+                {errors[name]?.[index]?.productId ? (
+                  <p className="text-destructive text-xs">
+                    {errors[name]?.[index]?.productId?.message}
+                  </p>
+                ) : null}
+              </div>
+              <div className="flex items-end justify-between gap-2">
+                <Controller
+                  control={control}
+                  name={`${name}.${index}.iconUrl` as const}
+                  render={({ field: iconField }) => (
+                    <ImageUpload
+                      label="Мини-лого"
+                      value={iconField.value ?? ""}
+                      onChange={iconField.onChange}
+                      hint="иначе обложка"
+                    />
+                  )}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground"
+                  onClick={() => array.remove(index)}
+                >
+                  Удалить
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-muted-foreground mt-3 text-xs">{emptyHint}</p>
+      )}
+    </div>
+  );
+}
+
+/** Shared editor of the image+link card lists (the top-up wall and the
+ * hero cylinder): add/remove rows, upload an image, set the link. */
+function CardsField({
+  control,
+  errors,
+  name,
+  title,
+  hint,
+  emptyHint,
+}: {
+  control: Control<HomeContentValues>;
+  errors: FieldErrors<HomeContentValues>;
+  name: CardListName;
+  title: string;
+  hint: string;
+  emptyHint: string;
+}) {
+  const array = useFieldArray({ control, name });
+  return (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-sm font-medium">{title}</p>
+          <p className="text-muted-foreground mt-0.5 text-xs">{hint}</p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          disabled={array.fields.length >= 12}
+          onClick={() => array.append({ imageUrl: "", href: "" })}
+        >
+          <Plus className="size-4" aria-hidden />
+          Добавить карточку
+        </Button>
+      </div>
+
+      {array.fields.length > 0 ? (
+        <div className="mt-3 space-y-3">
+          {array.fields.map((field, index) => (
+            <div
+              key={field.id}
+              className="border-border bg-canvas/40 rounded-xl border p-4"
+            >
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold">Карточка {index + 1}</p>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground"
+                  onClick={() => array.remove(index)}
+                >
+                  Удалить
+                </Button>
+              </div>
+              <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                <Controller
+                  control={control}
+                  name={`${name}.${index}.imageUrl` as const}
+                  render={({ field: imageField }) => (
+                    <ImageUpload
+                      label="Изображение"
+                      value={imageField.value}
+                      onChange={imageField.onChange}
+                      hint="Весь тайл — картинка-ссылка"
+                    />
+                  )}
+                />
+                <div className="space-y-1.5">
+                  <Label htmlFor={`${name}-${index}-href`}>Ссылка</Label>
+                  <Input
+                    id={`${name}-${index}-href`}
+                    placeholder="/products/slug"
+                    {...control.register(`${name}.${index}.href` as const)}
+                  />
+                  {errors[name]?.[index]?.href ? (
+                    <p className="text-destructive text-xs">
+                      {errors[name]?.[index]?.href?.message}
+                    </p>
+                  ) : null}
+                  {errors[name]?.[index]?.imageUrl ? (
+                    <p className="text-destructive text-xs">
+                      {errors[name]?.[index]?.imageUrl?.message}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-muted-foreground mt-3 text-xs">{emptyHint}</p>
+      )}
+    </div>
+  );
+}
+
 /** «Главная страница» tab: the hero banner texts (kicker, h1 with the
- * gradient accent, subtitle, CTA and the four advantage tiles). */
+ * gradient accent, subtitle, CTA), the four advantage tiles, the service
+ * pickers for the top-up form and the service wall, and the hero
+ * cylinder cards (image + link each). */
 export function HomeContentForm({ content }: HomeContentFormProps) {
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
+  const products = useAdminProducts({ limit: 100 });
+  const allProducts = products.data?.items ?? [];
+  // The home FORM sells buyer-entered amounts only; the WALL may show
+  // any top-up service (amount or nominal).
+  const amountProducts = allProducts
+    .filter((product) => product.kind === "TOPUP_AMOUNT")
+    .map((product) => ({ id: product.id, title: product.title }));
+  const topupProducts = allProducts
+    .filter((product) => product.kind !== "GAME_KEY")
+    .map((product) => ({ id: product.id, title: product.title }));
 
   const form = useForm<HomeContentValues>({
     resolver: zodResolver(homeContentSchema),
@@ -38,6 +272,16 @@ export function HomeContentForm({ content }: HomeContentFormProps) {
       ctaLabel: content.ctaLabel,
       ctaHref: content.ctaHref,
       tiles: content.tiles,
+      wallCards: content.wallCards,
+      carouselCards: content.carouselCards,
+      topupServices: content.topupServices.map((service) => ({
+        productId: service.productId,
+        iconUrl: service.iconUrl ?? "",
+      })),
+      serviceCards: content.serviceCards.map((service) => ({
+        productId: service.productId,
+        iconUrl: service.iconUrl ?? "",
+      })),
     },
   });
   const errors = form.formState.errors;
@@ -55,7 +299,18 @@ export function HomeContentForm({ content }: HomeContentFormProps) {
         ctaLabel: values.ctaLabel,
         ctaHref: values.ctaHref,
         tiles: values.tiles,
+        wallCards: values.wallCards,
+        carouselCards: values.carouselCards,
+        topupServices: values.topupServices.map((service) => ({
+          productId: service.productId,
+          iconUrl: service.iconUrl ?? null,
+        })),
+        serviceCards: values.serviceCards.map((service) => ({
+          productId: service.productId,
+          iconUrl: service.iconUrl ?? null,
+        })),
       });
+      void revalidateStorefrontTags(["home-content"]);
       setSavedAt(new Date().toLocaleTimeString("ru-RU"));
     } catch (cause) {
       setErrorMessage(cause instanceof Error ? cause.message : "Ошибка");
@@ -135,6 +390,46 @@ export function HomeContentForm({ content }: HomeContentFormProps) {
           ))}
         </div>
       </div>
+
+      <ServicesField
+        control={form.control}
+        errors={errors}
+        name="topupServices"
+        title="Сервисы формы пополнения (второй блок)"
+        hint="Выбираются из товаров-пополнений по сумме. Комиссия сервиса задаётся в карточке товара. Пустой список — блок без формы."
+        emptyHint="Сервисы не выбраны — форма на главной скрыта."
+        max={8}
+        products={amountProducts}
+      />
+
+      <ServicesField
+        control={form.control}
+        errors={errors}
+        name="serviceCards"
+        title="Карточки сервисов (третий блок)"
+        hint="До 7 сервисов пополнения вокруг плитки «Посмотреть все»; карточка ведёт на персональную страницу пополнения. Пустой список — стандартные плитки."
+        emptyHint="Карточки не заданы — используется стандартный блок."
+        max={7}
+        products={topupProducts}
+      />
+
+      <CardsField
+        control={form.control}
+        errors={errors}
+        name="wallCards"
+        title="Произвольные карточки-ссылки (устаревшие)"
+        hint="Изображение + ссылка. Показываются только если не заданы карточки сервисов выше."
+        emptyHint="Не заданы — используется стандартный блок."
+      />
+
+      <CardsField
+        control={form.control}
+        errors={errors}
+        name="carouselCards"
+        title="Крутящиеся карточки первого блока"
+        hint="Изображение и ссылка каждой карточки цилиндра. Пустой список — остаются стандартные обложки (без ссылок)."
+        emptyHint="Карточки не заданы — используется стандартный цилиндр."
+      />
 
       <div className="flex items-center gap-4">
         <Button type="submit" disabled={isPending} className="gap-2">

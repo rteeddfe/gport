@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { revalidateStorefrontTags } from "@/lib/revalidate";
 import {
   adminCreateCategory,
   adminDeleteCategory,
@@ -20,6 +21,8 @@ export function useAdminCategoryMutations() {
   const queryClient = useQueryClient();
 
   const invalidate = () => {
+    // Category rows render in the catalog chips and on product pages.
+    void revalidateStorefrontTags(["categories", "products"]);
     queryClient.invalidateQueries({ queryKey: ["categories"] });
   };
 

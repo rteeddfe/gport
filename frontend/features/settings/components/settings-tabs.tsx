@@ -6,7 +6,8 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 /** Tabs of the admin «Настройки сайта» section — each tab is its own route
- * (same raised-pill language as the buyer dashboard switcher). */
+ * (same raised-pill language as the buyer dashboard switcher). The store
+ * settings (acquiring) live in their own section: /admin/store. */
 const TABS = [
   { href: "/admin/settings/general", label: "Основные" },
   { href: "/admin/settings/seo", label: "SEO" },

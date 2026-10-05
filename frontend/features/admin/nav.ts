@@ -7,7 +7,9 @@ import {
   Newspaper,
   Package,
   Percent,
+  ReceiptText,
   Settings,
+  Store,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -82,6 +84,26 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     description: "Скидочные коды, лимиты и сроки действия",
     icon: Percent,
     permission: "promo-codes",
+  },
+  {
+    href: "/admin/support",
+    label: "Обращения",
+    description: "Сообщения из формы поддержки на витрине",
+    icon: MessageSquareQuote,
+    permission: "support",
+  },
+  {
+    href: "/admin/orders",
+    label: "Заказы",
+    description: "Заказы покупателей: оплата, статусы и выдача",
+    icon: ReceiptText,
+  },
+  {
+    href: "/admin/store",
+    label: "Магазин",
+    description: "Оплата, эквайринг и исходящие письма",
+    icon: Store,
+    requiredRole: "SUPER_ADMIN",
   },
   {
     href: "/admin/users",

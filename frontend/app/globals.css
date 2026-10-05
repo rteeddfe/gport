@@ -116,6 +116,17 @@
   ::selection {
     background: rgb(139 92 246 / 0.35);
   }
+  /* Tailwind v4 preflight leaves buttons at cursor:default — every
+     actionable control gets the pointer back (usability rule: anything
+     clickable shows the pointer). */
+  button:not(:disabled),
+  [role="button"]:not(:disabled),
+  [role="radio"]:not(:disabled),
+  [role="tab"]:not(:disabled),
+  [role="combobox"]:not(:disabled),
+  summary {
+    cursor: pointer;
+  }
 }
 
 /* Signature effects of the neon theme (see docs/design.md — "Effects"). */
@@ -246,32 +257,165 @@
 }
 
 /*
- * Hero circular carousel (banner art, placeholder content). Pure CSS-3D
- * layout: the scene provides the perspective, `.carousel-ring` keeps the
- * slot plane (rotateY itself is driven by framer-motion in
- * hero-carousel.tsx — auto-spin + pointer drag), each card's positioner
- * places it on the circle and its face counter-rotates so cards always
- * face the viewer. `--card-angle` is the static slot angle set per card
- * from the component.
+ * Hero cylinder carousel (banner art, placeholder content) — picked
+ * 2026-10-05 from five candidates on /design/carousel, ported from
+ * «CSS Only 3D Image Carousel» (codepen.io/NiklasKnaack/pen/abrOMLY)
+ * and softened per review: cards carry a violet duotone tint (never
+ * plain grayscale), a static diagonal sheen, and their reflections are
+ * quality=5 next/image copies under a heavy blur, faded into the panel
+ * by a gradient. Hover restores full color, glows violet and pauses
+ * the spin. Markup: hero-carousel-cylinder.tsx.
  */
-.carousel-scene {
+.carousel-cylinder {
+  --cylinder-diameter: 30rem;
+  --cylinder-radius: calc(var(--cylinder-diameter) / 2);
+  --cylinder-item-width: 9rem;
+  --cylinder-item-height: 13.5rem;
+  --cylinder-duration: 28s;
+  position: relative;
+  width: var(--cylinder-diameter);
+  height: var(--cylinder-diameter);
+  /* Lifted a touch so the reflection plane clears the tile row. */
+  translate: 0 -1.25rem;
   perspective: 1000px;
+  perspective-origin: 50% 20%;
 }
-.carousel-ring {
+.carousel-cylinder-items {
   position: absolute;
   inset: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
   transform-style: preserve-3d;
+  animation: carousel-cylinder-rotate var(--cylinder-duration) linear
+    infinite;
 }
-.carousel-card {
+.carousel-cylinder:has(.carousel-cylinder-item:hover)
+  .carousel-cylinder-items {
+  animation-play-state: paused;
+}
+@keyframes carousel-cylinder-rotate {
+  from {
+    transform: rotateY(0deg);
+  }
+  to {
+    transform: rotateY(360deg);
+  }
+}
+.carousel-cylinder-item {
   position: absolute;
-  left: 50%;
-  top: 50%;
+  left: calc(var(--cylinder-radius) - var(--cylinder-item-width) / 2);
+  top: calc(var(--cylinder-radius) - var(--cylinder-item-height) / 2);
+  width: var(--cylinder-item-width);
+  height: var(--cylinder-item-height);
   transform-style: preserve-3d;
-  transform: rotateY(var(--card-angle)) translateZ(240px);
+  transform: rotateY(calc(360deg / var(--num) * var(--i)))
+    translateZ(var(--cylinder-radius));
+  transition:
+    transform 0.45s ease-out,
+    box-shadow 0.45s ease-out;
+  box-shadow: 0 0 5rem transparent;
 }
-.carousel-card-face {
-  width: 140px;
-  margin: -113px 0 0 -70px;
+.carousel-cylinder-item:hover {
+  box-shadow: 0 0 5rem rgb(139 92 246 / 0.35);
+  transform: rotateY(calc(360deg / var(--num) * var(--i)))
+    translateZ(calc(var(--cylinder-radius) * 1.05));
+}
+/* Duotone instead of plain grayscale: grayscale → sepia → hue-rotate
+   lands the monochrome in the site's violet; hover restores color. */
+.carousel-cylinder-face {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: 0.75rem;
+  border: 1px solid rgb(255 255 255 / 0.08);
+  filter: grayscale(100%) sepia(100%) hue-rotate(205deg) saturate(1.6)
+    brightness(0.8) contrast(1.05);
+  transition: filter 0.45s ease-out;
+}
+.carousel-cylinder-item:hover .carousel-cylinder-face {
+  filter: none;
+}
+/* Static diagonal highlight over the card — on the item, outside the
+   tinted face, so the sheen stays neutral white with a violet halo. */
+.carousel-cylinder-item::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 0.75rem;
+  background:
+    linear-gradient(
+      160deg,
+      rgb(255 255 255 / 0.2),
+      rgb(255 255 255 / 0.04) 32%,
+      transparent 55%
+    ),
+    radial-gradient(
+      120% 55% at 50% 0%,
+      rgb(139 92 246 / 0.16),
+      transparent 70%
+    );
+  pointer-events: none;
+}
+/* Mirror under the card: the quality=5 next/image copy, heavily
+   blurred and duotoned darker; the gradient child fades it into the
+   panel floor. */
+.carousel-cylinder-reflect {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: 0.75rem;
+  transform-origin: center bottom;
+  transform: rotateX(90deg) rotateZ(180deg) rotateY(180deg);
+  filter: blur(0.3rem) grayscale(100%) sepia(100%) hue-rotate(205deg)
+    saturate(1.4) brightness(0.55);
+  pointer-events: none;
+}
+.carousel-cylinder-reflect-fade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to top,
+    rgb(20 23 32 / 0.55),
+    rgb(20 23 32 / 0.95) 78%
+  );
+}
+.carousel-cylinder-ground {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--cylinder-diameter);
+  height: var(--cylinder-diameter);
+  border-radius: 50%;
+  background: radial-gradient(rgb(139 92 246 / 0.35) 15%, transparent 60%);
+  opacity: 0.45;
+  transform: rotateX(90deg)
+    translateZ(calc(var(--cylinder-item-height) / -2));
+  transition: opacity 0.45s ease-out;
+}
+.carousel-cylinder-items:has(.carousel-cylinder-item:hover)
+  .carousel-cylinder-ground {
+  opacity: 0.7;
+}
+
+/*
+ * Mobile (< lg): the same elements, adapted by CSS only and lighter —
+ * a smaller ring with no lift, and the mirror layer is display:none so
+ * its quality-5 images (lazy-loaded) are never fetched and the blur
+ * filter never runs on the phone. Only the 8 face covers at ~112px are
+ * downloaded.
+ */
+@media (max-width: 1023px) {
+  .carousel-cylinder {
+    --cylinder-diameter: 19rem;
+    --cylinder-item-width: 6.25rem;
+    --cylinder-item-height: 9rem;
+    /* Slight lift so the ring sits closer to the CTAs above. */
+    translate: 0 -0.75rem;
+  }
+  .carousel-cylinder-reflect {
+    display: none;
+  }
 }
 
 /*
@@ -300,3 +444,4 @@
     animation: none;
   }
 }
+

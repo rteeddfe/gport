@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatPrice } from "@/features/products/components/product-card";
+import { formatPrice } from "@/lib/format";
 import { useAdminPromoCodes, useAdminPromoCodeMutations } from "../hooks/use-admin-promo-codes";
 import { PromoCodeFormDialog } from "./promo-code-form-dialog";
 import type { PromoCode } from "@/types/api";

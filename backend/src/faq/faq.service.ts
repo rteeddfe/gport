@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import type { Prisma } from '../generated/prisma/client.js';
+import { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../database/prisma.service.js';
 import type { CreateFaqItemDto, UpdateFaqItemDto } from './dto/faq-item.dto.js';
 
@@ -75,16 +75,23 @@ export class FaqService {
         },
         select: ITEM_SELECT,
       });
-    } catch {
-      throw new NotFoundException('FAQ item not found');
+    } catch (cause) {
+      // Only a missing row maps to 404 — an outage keeps its 500.
+      if (cause instanceof Prisma.PrismaClientKnownRequestError && cause.code === 'P2025') {
+        throw new NotFoundException('FAQ item not found');
+      }
+      throw cause;
     }
   }
 
   async remove(id: string): Promise<void> {
     try {
       await this.prisma.faqItem.delete({ where: { id } });
-    } catch {
-      throw new NotFoundException('FAQ item not found');
+    } catch (cause) {
+      if (cause instanceof Prisma.PrismaClientKnownRequestError && cause.code === 'P2025') {
+        throw new NotFoundException('FAQ item not found');
+      }
+      throw cause;
     }
   }
 }

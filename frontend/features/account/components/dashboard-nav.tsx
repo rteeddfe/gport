@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { cn } from "@/lib/utils";
+import { isPanelNavItemActive } from "@/components/layout/panel-nav";
 import { ACCOUNT_NAV_ITEMS } from "../nav";
 
 /** Section switcher of the buyer dashboard: horizontal pills rendered on
@@ -13,33 +14,25 @@ export function DashboardNav() {
 
   return (
     <nav aria-label="Личный кабинет" className="flex flex-wrap gap-1">
-      {ACCOUNT_NAV_ITEMS.map((item) => (
-        <Link
-          key={item.href}
-          href={item.href}
-          aria-current={
-            item.href === pathname || pathname.startsWith(`${item.href}/`)
-              ? "page"
-              : undefined
-          }
-          className={cn(
-            "flex items-center gap-2 rounded-full px-3.5 py-2 text-sm transition-colors",
-            item.href === pathname || pathname.startsWith(`${item.href}/`)
-              ? "bg-raised font-medium text-foreground"
-              : "text-muted-foreground hover:bg-raised/50 hover:text-foreground",
-          )}
-        >
-          <item.icon
+      {ACCOUNT_NAV_ITEMS.map((item) => {
+        const active = isPanelNavItemActive(item.href, pathname);
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            aria-current={active ? "page" : undefined}
             className={cn(
-              "size-4",
-              (item.href === pathname ||
-                pathname.startsWith(`${item.href}/`)) &&
-                "text-brand",
+              "flex items-center gap-2 rounded-full px-3.5 py-2 text-sm transition-colors",
+              active
+                ? "bg-raised font-medium text-foreground"
+                : "text-muted-foreground hover:bg-raised/50 hover:text-foreground",
             )}
-          />
-          {item.label}
-        </Link>
-      ))}
+          >
+            <item.icon className={cn("size-4", active && "text-brand")} />
+            {item.label}
+          </Link>
+        );
+      })}
     </nav>
   );
 }

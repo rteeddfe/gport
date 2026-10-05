@@ -7,7 +7,14 @@ export type Role = "USER" | "ADMIN" | "SUPER_ADMIN";
 
 /** Admin tab permissions granted to ADMIN accounts (SUPER_ADMIN bypasses
  * them). «products» covers both the products and the categories tabs. */
-export type AdminPermission = "products" | "posts" | "reviews" | "promo-codes";
+export type AdminPermission =
+  | "products"
+  | "orders"
+  | "files"
+  | "posts"
+  | "reviews"
+  | "promo-codes"
+  | "support";
 
 export const ADMIN_PERMISSIONS: AdminPermission[] = [
   "products",
@@ -24,6 +31,28 @@ export interface Category {
   slug: string;
   description: string | null;
   productsCount: number;
+}
+
+/** What the buyer gets: a key/gift code, fixed nominals or an amount
+ * range for a wallet top-up (drives the checkout form). */
+export type ProductKind = "GAME_KEY" | "TOPUP_NOMINAL" | "TOPUP_AMOUNT";
+
+/** Fulfillment: auto code from the key pool or manual operator crediting. */
+export type CreditingMode = "AUTO_CODE" | "MANUAL";
+
+/** The account field a top-up buyer fills (Steam login, player ID…). */
+export type AccountFieldKind = "LOGIN" | "ID" | "EMAIL";
+
+/** One purchasable nominal of a TOPUP_NOMINAL product («60 UC»). */
+export interface ProductVariant {
+  id: string;
+  productId: string;
+  label: string;
+  value: number | null;
+  unit: string | null;
+  priceCents: number;
+  oldPriceCents: number | null;
+  sortOrder: number;
 }
 
 export interface Product {
@@ -44,6 +73,19 @@ export interface Product {
   stock: number;
   currency: string;
   status: ProductStatus;
+  kind: ProductKind;
+  /** TOPUP_AMOUNT only: the buyer-entered amount range (kopecks). */
+  minValue: number | null;
+  maxValue: number | null;
+  /** Service commission on top of the credited amount, percent 0..50. */
+  commissionPercent: number;
+  creditingMode: CreditingMode;
+  /** Checkout account field for top-ups (what the buyer must provide). */
+  accountFieldKind: AccountFieldKind | null;
+  accountFieldLabel: string | null;
+  accountFieldHint: string | null;
+  externalId: string | null;
+  variants: ProductVariant[];
   categoryId: string;
   category?: Category;
   createdAt: string;
@@ -51,9 +93,16 @@ export interface Product {
 }
 
 /** GET /products/:slug — the product plus up to 8 related PUBLISHED
- * products from the same category. */
+ * products from the same category and its buyer FAQ. */
 export interface ProductDetail extends Product {
   related: Product[];
+  faq: ProductFaqItem[];
+}
+
+/** One Q/A pair of a product's FAQ (public view). */
+export interface ProductFaqItem {
+  question: string;
+  answer: string;
 }
 
 export type PostStatus = "DRAFT" | "PUBLISHED";
@@ -90,6 +139,116 @@ export interface Review {
 
 export type DiscountType = "PERCENT" | "FIXED";
 
+export type OrderStatus = "AWAITING_PAYMENT" | "PAID" | "CANCELLED";
+
+/** One line of a direct-purchase order (price/title snapshots at buy
+ * time). keys = auto-delivered digital keys; instruction = the fallback
+ * delivery text; variantLabel/amountCents/accountIdentifier = top-up
+ * snapshots (chosen nominal / entered amount / account to credit). */
+export interface OrderItemView {
+  id: string;
+  productTitle: string;
+  productSlug: string;
+  productImage: string | null;
+  instruction: string | null;
+  unitPriceCents: number;
+  quantity: number;
+  variantLabel: string | null;
+  amountCents: number | null;
+  /** Service commission snapshot charged on top of amountCents. */
+  commissionCents: number | null;
+  accountIdentifier: string | null;
+  keys: string[];
+}
+
+export interface OrderView {
+  id: string;
+  status: OrderStatus;
+  totalCents: number;
+  currency: string;
+  provider: string;
+  createdAt: string;
+  paidAt: string | null;
+  items: OrderItemView[];
+}
+
+export interface AdminOrderView extends OrderView {
+  userName: string | null;
+  userEmail: string;
+}
+
+export interface PaginatedOrders {
+  items: AdminOrderView[];
+  total: number;
+  page: number;
+  limit: number;
+  pages: number;
+}
+
+/** Enabled payment method for the buy dialog. */
+export interface PaymentMethod {
+  id: string;
+  name: string;
+}
+
+/** Credential field of an acquirer (drives the admin settings form). */
+export interface PaymentProviderField {
+  key: string;
+  label: string;
+  secret?: boolean;
+}
+
+export interface PaymentProviderMeta {
+  id: string;
+  name: string;
+  fields: PaymentProviderField[];
+  /** Only the test emulator is integrated end-to-end for now. */
+  live: boolean;
+}
+
+export interface ProviderConfigView {
+  enabled: boolean;
+  config: Record<string, string>;
+}
+
+export interface PaymentSettingsView {
+  testEnabled: boolean;
+  providers: Record<string, ProviderConfigView>;
+  providerMeta: PaymentProviderMeta[];
+  updatedAt: string;
+}
+
+export interface PaymentSettingsInput {
+  testEnabled: boolean;
+  providers: Record<string, { enabled: boolean; config: Record<string, string> }>;
+}
+
+/** Data of the emulated acquiring page (/pay/test/:token). */
+export interface TestSessionView {
+  orderId: string;
+  status: OrderStatus;
+  amountCents: number;
+  currency: string;
+  description: string;
+}
+
+/** Outbox letter (no SMTP yet — rows are the delivery). */
+export interface EmailLogView {
+  id: string;
+  orderId: string | null;
+  to: string;
+  subject: string;
+  body: string;
+  createdAt: string;
+}
+
+/** Auto-delivery keys of a product (admin). */
+export interface ProductKeysView {
+  keys: { id: string; value: string; isSold: boolean }[];
+  available: number;
+  sold: number;
+}
+
 /** Admin promo code (GET /admin/promo-codes) — full row with usage
  * counters. PERCENT value is 1..99; FIXED value is kopecks. Codes are
  * distributed off-site, so there is no public enumeration endpoint —
@@ -113,8 +272,16 @@ export interface AuthUser {
   id: string;
   email: string;
   name: string | null;
+  /** App path or uploaded /files/:id URL; null = show the initials chip. */
+  avatarUrl: string | null;
   role: Role;
   permissions: AdminPermission[];
+}
+
+/** Admin-managed card of the home top-up wall (image + link). */
+export interface HomeWallCard {
+  imageUrl: string;
+  href: string;
 }
 
 /** Tokens ride as httpOnly cookies — the body only carries the profile. */
@@ -210,7 +377,61 @@ export interface HomeContent {
   ctaLabel: string;
   ctaHref: string;
   tiles: string[];
+  /** Cards of the home top-up wall; empty = built-in service tiles. */
+  wallCards: HomeWallCard[];
+  /** Cards of the hero cylinder carousel (image + link); empty = the
+   * built-in placeholder covers. */
+  carouselCards: HomeWallCard[];
+  /** Services of the home top-up FORM, resolved against PUBLISHED
+   * products; empty = the form block hides. */
+  topupServices: HomeServiceCard[];
+  /** Services of the home service WALL (block 3); empty = built-in
+   * service tiles. */
+  serviceCards: HomeServiceCard[];
   updatedAt: string;
+}
+
+/** A service top-up product picked for a home block. */
+export interface HomeServiceCard {
+  productId: string;
+  /** Admin-uploaded mini logo; null = use the product cover. */
+  iconUrl: string | null;
+  slug: string;
+  title: string;
+  /** TOPUP_AMOUNT lower bound or the base price (kopecks) — «от N ₽». */
+  priceFromCents: number;
+  commissionPercent: number;
+  image: string | null;
+  /** Checkout account field of the product (form rendering). */
+  accountFieldKind: "LOGIN" | "ID" | "EMAIL" | null;
+  accountFieldLabel: string | null;
+  accountFieldHint: string | null;
+  /** TOPUP_AMOUNT upper bound (kopecks); null otherwise. */
+  maxValue: number | null;
+}
+
+/** A support ticket from the storefront bubble (public view: own row). */
+export type SupportTicketStatus = "NEW" | "IN_PROGRESS" | "RESOLVED";
+
+export interface SupportTicketView {
+  id: string;
+  name: string | null;
+  contact: string;
+  message: string;
+  status: SupportTicketStatus;
+  createdAt: string;
+}
+
+export interface AdminSupportTicketView extends SupportTicketView {
+  ip: string | null;
+}
+
+export interface PaginatedTickets {
+  items: AdminSupportTicketView[];
+  total: number;
+  page: number;
+  limit: number;
+  pages: number;
 }
 
 export interface PolicyPageSummary {

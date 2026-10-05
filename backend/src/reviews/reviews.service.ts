@@ -72,7 +72,14 @@ export class ReviewsService {
   }
 
   async findMany(query: FindReviewsDto): Promise<PaginatedReviews> {
-    return this.list({ status: ReviewStatus.PUBLISHED }, query);
+    // The IP is internal moderation data — it never leaves the admin area.
+    return this.list({ status: ReviewStatus.PUBLISHED }, query, {
+      id: true,
+      authorName: true,
+      rating: true,
+      text: true,
+      createdAt: true,
+    });
   }
 
   async findManyAdmin(query: AdminFindReviewsDto): Promise<PaginatedReviews> {
@@ -117,6 +124,7 @@ export class ReviewsService {
   private async list(
     where: Prisma.ReviewWhereInput,
     query: FindReviewsDto,
+    select?: Prisma.ReviewSelect,
   ): Promise<PaginatedReviews> {
     const page = query.page ?? 1;
     const limit = query.limit ?? DEFAULT_LIMIT;
@@ -126,6 +134,7 @@ export class ReviewsService {
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
+        ...(select ? { select } : {}),
       }),
       this.prisma.review.count({ where }),
     ]);

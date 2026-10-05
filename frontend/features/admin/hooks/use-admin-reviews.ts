@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { revalidateStorefrontTags } from "@/lib/revalidate";
 import {
   adminDeleteReview,
   adminGetReviews,
@@ -23,6 +24,7 @@ export function useAdminReviewMutations() {
 
   const invalidate = () => {
     // The public homepage/reviews lists read the same rows server-side.
+    void revalidateStorefrontTags(["reviews"]);
     queryClient.invalidateQueries({ queryKey: ["admin-reviews"] });
   };
 

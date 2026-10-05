@@ -4,15 +4,15 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Patch,
   Post,
   Req,
   Res,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
+import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
-import { CartService } from '../cart/cart.service.js';
-import { CART_COOKIE } from '../cart/cart.controller.js';
 import {
   ACCESS_TOKEN_COOKIE,
   ACCESS_TOKEN_TTL_SECONDS,
@@ -29,8 +29,10 @@ import {
   type CookieSameSite,
 } from '../common/utils/cookies.js';
 import { AuthService, type AuthResult } from './auth.service.js';
+import { ChangePasswordDto } from './dto/change-password.dto.js';
 import { LoginDto } from './dto/login.dto.js';
 import { RegisterDto } from './dto/register.dto.js';
+import { UpdateProfileDto } from './dto/update-profile.dto.js';
 
 
 
@@ -44,34 +46,31 @@ interface SessionResponse {
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
-    private readonly cartService: CartService,
     private readonly configService: ConfigService,
   ) {}
 
   @Public()
   @Post('register')
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
   async register(
     @Body() dto: RegisterDto,
-    @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ): Promise<SessionResponse> {
     const result = await this.authService.register(dto);
     this.setSessionCookies(response, result);
-    await this.mergeGuestCart(request, response, result.user.id);
     return { user: result.user };
   }
 
   @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   async login(
     @Body() dto: LoginDto,
-    @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ): Promise<SessionResponse> {
     const result = await this.authService.login(dto);
     this.setSessionCookies(response, result);
-    await this.mergeGuestCart(request, response, result.user.id);
     return { user: result.user };
   }
 
@@ -79,6 +78,7 @@ export class AuthController {
   @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   async refresh(
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
@@ -113,6 +113,33 @@ export class AuthController {
     return user;
   }
 
+  /** Self-service profile edit; returns the fresh profile. */
+  @Patch('me')
+  @ApiBearerAuth()
+  async updateProfile(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: UpdateProfileDto,
+  ): Promise<AuthUser> {
+    return this.authService.updateProfile(user.id, dto);
+  }
+
+  /** Password change: other sessions are revoked, the current one stays. */
+  @Post('password')
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async changePassword(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: ChangePasswordDto,
+    @Req() request: Request,
+  ): Promise<void> {
+    await this.authService.changePassword(
+      user.id,
+      dto.currentPassword,
+      dto.newPassword,
+      parseCookie(request.headers.cookie, REFRESH_TOKEN_COOKIE),
+    );
+  }
+
   /** httpOnly SameSite cookies (from COOKIE_SAME_SITE, default Lax);
    * Secure added behind TLS (production) and always with SameSite=None. */
   private cookieSameSite(): CookieSameSite {
@@ -137,23 +164,5 @@ export class AuthController {
         { secure, sameSite },
       ),
     ]);
-  }
-
-  /** Guest cart items follow the user into their account on login. */
-  private async mergeGuestCart(
-    request: Request,
-    response: Response,
-    userId: string,
-  ): Promise<void> {
-    const guestToken = parseCookie(request.headers.cookie, CART_COOKIE);
-    if (!guestToken) {
-      return;
-    }
-    await this.cartService.mergeGuestCart(guestToken, userId);
-    // append: the session cookies are already queued on the same header.
-    response.append(
-      'Set-Cookie',
-      serializeExpiredCookie(CART_COOKIE, this.cookieSameSite()),
-    );
   }
 }

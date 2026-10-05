@@ -13,6 +13,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "./password-input";
 import { getErrorMessage } from "@/lib/api/errors";
 import { signInSchema, type SignInValues } from "@/schemas/auth.schema";
 import { useSignIn } from "../hooks/use-sign-in";
@@ -69,8 +70,7 @@ export function SignInForm() {
             <FormItem>
               <FormLabel>Пароль</FormLabel>
               <FormControl>
-                <Input
-                  type="password"
+                <PasswordInput
                   placeholder="••••••••"
                   autoComplete="current-password"
                   {...field}

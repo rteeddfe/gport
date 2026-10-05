@@ -26,7 +26,7 @@ import {
 import { useAdminProducts, useAdminProductMutations } from "../hooks/use-admin-products";
 import { useCategories } from "../hooks/use-admin-categories";
 import { PRODUCT_STATUS_LABELS } from "./product-form";
-import { formatPrice } from "@/features/products/components/product-card";
+import { formatPrice } from "@/lib/format";
 import type { Product, ProductStatus } from "@/types/api";
 
 function statusBadgeVariant(status: ProductStatus): "default" | "secondary" | "outline" {

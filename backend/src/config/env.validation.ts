@@ -21,4 +21,12 @@ export const envValidationSchema = Joi.object({
   COOKIE_SAME_SITE: Joi.string()
     .valid('Lax', 'None', 'Strict')
     .default('Lax'),
+  /** Gates order fulfillment: without a strong secret the webhook HMAC is
+   * forgeable. A dev fallback exists for local runs; production must set
+   * its own value (both apps share it while the test emulator is on). */
+  PAYMENTS_WEBHOOK_SECRET: Joi.string()
+    .min(32)
+    // `then` is a Joi condition option, not a thenable.
+    // oxlint-disable-next-line unicorn/no-thenable
+    .when('NODE_ENV', { is: 'production', then: Joi.required() }),
 });

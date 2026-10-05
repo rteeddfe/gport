@@ -2,11 +2,8 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { cn } from "cn";
+import { formatPrice } from "@/lib/format";
 import type { Product } from "@/types/api";
-
-export function formatPrice(priceCents: number): string {
-  return `${(priceCents / 100).toLocaleString("ru-RU")} ₽`;
-}
 
 function discountPercent(product: Product): number | null {
   if (!product.oldPriceCents || product.oldPriceCents <= product.priceCents) {

@@ -1,7 +1,8 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Headset } from "lucide-react";
+import { Headset, Loader2 } from "lucide-react";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { supportSchema, type SupportValues } from "@/schemas/support.schema";
+import { createSupportTicket } from "@/services/support.service";
 
 function onlineDot(className: string): React.ReactNode {
   return (
@@ -36,27 +38,47 @@ function onlineDot(className: string): React.ReactNode {
 
 /**
  * Floating "Поддержка" bubble (bottom-right, on every storefront page)
- * opening a feedback dialog. The trigger is the mini-card variant picked
- * by the user out of five design probes (2026-10-04): icon bubble,
- * «Поддержка 24/7» title and an online indicator. React Hook Form + Zod
- * validation only — there is no tickets API yet, so a valid submit just
- * closes the dialog; the request lands here when the support backend is
- * approved.
+ * opening a support-ticket dialog. The trigger is the mini-card variant
+ * picked by the user out of five design probes (2026-10-04). A valid
+ * submit POSTs /support — the ticket lands in the admin «Обращения» tab;
+ * the anti-spam limits (1/minute per IP, 30/hour globally) live
+ * server-side and their messages are shown verbatim.
  */
 export function SupportBubble() {
+  const [isPending, setIsPending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
   const form = useForm<SupportValues>({
     resolver: zodResolver(supportSchema),
-    defaultValues: { name: "", email: "", question: "" },
+    defaultValues: { name: "", contact: "", message: "" },
   });
 
-  function onSubmit() {
-    form.reset();
+  async function onSubmit(values: SupportValues) {
+    setIsPending(true);
+    setServerError(null);
+    try {
+      await createSupportTicket({
+        name: values.name || undefined,
+        contact: values.contact,
+        message: values.message,
+      });
+      setSent(true);
+      form.reset();
+    } catch (cause) {
+      setServerError(cause instanceof Error ? cause.message : "Ошибка");
+    } finally {
+      setIsPending(false);
+    }
   }
 
   return (
     <Dialog
       onOpenChange={(next) => {
-        if (!next) form.reset();
+        if (!next) {
+          form.reset();
+          setSent(false);
+          setServerError(null);
+        }
       }}
     >
       <DialogTrigger asChild>
@@ -80,71 +102,85 @@ export function SupportBubble() {
         <DialogHeader>
           <DialogTitle>Поддержка</DialogTitle>
           <DialogDescription>
-            Задайте вопрос — ответ придёт на указанную почту.
+            Опишите проблему и оставьте контакт — ответим на него.
           </DialogDescription>
         </DialogHeader>
-        <Form {...form}>
-          <form
-            onSubmit={form.handleSubmit(onSubmit)}
-            noValidate
-            className="space-y-4"
-          >
-            <FormField
-              control={form.control}
-              name="name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Имя</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Ваше имя (необязательно)" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="email"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Email</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="email"
-                      placeholder="you@example.com"
-                      autoComplete="email"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="question"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Вопрос</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      rows={4}
-                      placeholder="Опишите ситуацию — что случилось и где"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <Button type="submit" className="w-full">
-              Отправить вопрос
-            </Button>
-            <p className="text-muted-foreground text-center text-xs">
-              Отправка на сервер появится вместе с API обращений.
+        {sent ? (
+          <div className="space-y-3 py-4 text-center">
+            <p className="text-sm font-semibold">Обращение отправлено</p>
+            <p className="text-muted-foreground text-sm">
+              Мы получили ваше сообщение и ответим по указанному контакту.
             </p>
-          </form>
-        </Form>
+            <Button variant="outline" className="w-full" onClick={() => setSent(false)}>
+              Написать ещё
+            </Button>
+          </div>
+        ) : (
+          <Form {...form}>
+            <form
+              onSubmit={form.handleSubmit(onSubmit)}
+              noValidate
+              className="space-y-4"
+            >
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Имя</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Ваше имя (необязательно)" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="contact"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email или @telegram для ответа</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="you@example.com или @username"
+                        autoComplete="email"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="message"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Сообщение</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        rows={4}
+                        placeholder="Опишите ситуацию — что случилось и где"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <Button type="submit" className="w-full" disabled={isPending}>
+                {isPending ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden />
+                ) : null}
+                Отправить обращение
+              </Button>
+              {serverError ? (
+                <p className="text-destructive text-center text-xs">{serverError}</p>
+              ) : null}
+            </form>
+          </Form>
+        )}
       </DialogContent>
     </Dialog>
   );

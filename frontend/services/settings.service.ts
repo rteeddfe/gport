@@ -23,7 +23,9 @@ export interface UpdateSiteSettingsInput {
 }
 
 export function getSettings(): Promise<SiteSettings> {
-  return apiFetch<SiteSettings>("/settings");
+  return apiFetch<SiteSettings>("/settings", {
+    next: { tags: ["settings"], revalidate: 300 },
+  });
 }
 
 export function updateSettings(

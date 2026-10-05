@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { revalidateStorefrontTags } from "@/lib/revalidate";
 import { policySchema, type PolicyValues } from "@/schemas/policy.schema";
 import {
   createPolicy,
@@ -66,6 +67,7 @@ function PolicyForm({
     mutationFn: (values: PolicyValues) =>
       doc === null ? createPolicy(values) : updatePolicy(doc.id, values),
     onSuccess: async (saved) => {
+      void revalidateStorefrontTags(["policies"]);
       await queryClient.invalidateQueries({ queryKey: ["admin-policies"] });
       queryClient.invalidateQueries({ queryKey: ["policy", saved.slug] });
       onSelected({ id: saved.id, slug: saved.slug });
@@ -77,6 +79,7 @@ function PolicyForm({
   const remove = useMutation({
     mutationFn: () => deletePolicy(doc!.id),
     onSuccess: async () => {
+      void revalidateStorefrontTags(["policies"]);
       await queryClient.invalidateQueries({ queryKey: ["admin-policies"] });
       onSelected(null);
     },

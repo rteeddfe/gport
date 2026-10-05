@@ -11,6 +11,10 @@ export interface CategoryWithCount {
   productsCount: number;
 }
 
+/** Public/Display counts only count PUBLISHED products — catalog chips
+ * and landing cards must not advertise drafts. */
+const PUBLISHED_COUNT = { _count: { select: { products: { where: { status: 'PUBLISHED' as const } } } } };
+
 @Injectable()
 export class CategoriesService {
   constructor(private readonly prisma: PrismaService) {}
@@ -18,7 +22,7 @@ export class CategoriesService {
   async findMany(): Promise<CategoryWithCount[]> {
     const categories = await this.prisma.category.findMany({
       orderBy: { name: 'asc' },
-      include: { _count: { select: { products: true } } },
+      include: PUBLISHED_COUNT,
     });
     return categories.map(({ _count, ...category }) => ({
       ...category,
@@ -35,7 +39,7 @@ export class CategoriesService {
         slug,
         description: dto.description ?? null,
       },
-      include: { _count: { select: { products: true } } },
+      include: PUBLISHED_COUNT,
     });
     return this.withCount(category);
   }
@@ -55,7 +59,7 @@ export class CategoriesService {
         slug,
         description: dto.description,
       },
-      include: { _count: { select: { products: true } } },
+      include: PUBLISHED_COUNT,
     });
     return this.withCount(category);
   }

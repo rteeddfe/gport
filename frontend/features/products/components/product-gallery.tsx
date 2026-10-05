@@ -27,7 +27,7 @@ export function ProductGallery({
             alt={title}
             fill
             priority
-            sizes="(min-width: 1024px) 40vw, 100vw"
+            sizes="(max-width: 424px) 100vw, 360px"
             className="object-cover"
           />
         ) : (

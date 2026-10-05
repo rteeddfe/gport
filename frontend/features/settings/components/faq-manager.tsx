@@ -29,6 +29,7 @@ import {
   getAdminFaq,
   updateFaqItem,
 } from "@/services/faq.service";
+import { revalidateStorefrontTags } from "@/lib/revalidate";
 import type { FaqCategory, FaqItem } from "@/types/api";
 
 const CATEGORY_LABELS: Record<FaqCategory, string> = {
@@ -38,7 +39,10 @@ const CATEGORY_LABELS: Record<FaqCategory, string> = {
 
 function useFaqMutations() {
   const queryClient = useQueryClient();
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["admin-faq"] });
+  const invalidate = () => {
+    void revalidateStorefrontTags(["faq"]);
+    queryClient.invalidateQueries({ queryKey: ["admin-faq"] });
+  };
   const create = useMutation({
     mutationFn: createFaqItem,
     onSuccess: invalidate,

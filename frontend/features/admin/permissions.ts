@@ -5,16 +5,22 @@ import type { AdminPermission, AuthUser } from "@/types/api";
  * permission badges (user list). Mirrors backend ADMIN_PERMISSIONS. */
 export const ADMIN_PERMISSION_LABELS: Record<AdminPermission, string> = {
   products: "Товары и категории",
+  orders: "Заказы",
+  files: "Файлы",
   posts: "Блог",
   reviews: "Отзывы",
   "promo-codes": "Промокоды",
+  support: "Обращения",
 };
 
 export const ADMIN_PERMISSION_ORDER: AdminPermission[] = [
   "products",
+  "orders",
+  "files",
   "posts",
   "reviews",
   "promo-codes",
+  "support",
 ];
 
 /** Nav subset visible to the session: permission items need the matching

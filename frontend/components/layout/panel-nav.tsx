@@ -12,6 +12,19 @@ export interface PanelNavItem {
   icon: LucideIcon;
 }
 
+/**
+ * Active rule shared by both panels' navs: a top-level section (/admin,
+ * /dashboard — no second segment) matches only its exact path, so the
+ * overview item does not stay lit on every child route; deeper items
+ * (/admin/products) stay active on their children too.
+ */
+export function isPanelNavItemActive(href: string, pathname: string): boolean {
+  if (!href.slice(1).includes("/")) {
+    return pathname === href;
+  }
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
 /** Sidebar nav list shared by the admin and account panels: the active
  * route gets the raised pill with a violet icon (same language as the
  * storefront header). */
@@ -29,8 +42,7 @@ export function PanelNav({
   return (
     <nav aria-label={label} className="flex flex-col gap-1">
       {items.map((item) => {
-        const active =
-          item.href === pathname || pathname.startsWith(`${item.href}/`);
+        const active = isPanelNavItemActive(item.href, pathname);
         return (
           <Link
             key={item.href}

@@ -23,6 +23,7 @@ describe("visibleAdminNavItems", () => {
     expect(items.map((item) => item.href)).toEqual([
       "/admin",
       "/admin/blog",
+      "/admin/orders",
       "/admin/health",
     ]);
   });
@@ -40,6 +41,7 @@ describe("visibleAdminNavItems", () => {
       "/admin/blog",
       "/admin/reviews",
       "/admin/promo-codes",
+      "/admin/orders",
       "/admin/health",
     ]);
   });
@@ -52,6 +54,7 @@ describe("visibleAdminNavItems", () => {
     });
     expect(items.map((item) => item.href)).toEqual([
       "/admin",
+      "/admin/orders",
       "/admin/health",
     ]);
   });

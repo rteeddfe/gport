@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { revalidateStorefrontTags } from "@/lib/revalidate";
 import {
   adminCreateProduct,
   adminDeleteProduct,
@@ -31,7 +32,9 @@ export function useAdminProductMutations() {
   const queryClient = useQueryClient();
 
   const invalidate = () => {
-    // The public catalog, product page and search read the same rows.
+    // The public catalog, product page and search read the same rows —
+    // drop the server Data Cache tags, then refresh the client caches.
+    void revalidateStorefrontTags(["products"]);
     queryClient.invalidateQueries({ queryKey: ["admin-products"] });
     queryClient.invalidateQueries({ queryKey: ["products"] });
   };

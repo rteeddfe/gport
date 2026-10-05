@@ -2,7 +2,8 @@
 
 import { Gamepad2, Folder } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   CommandDialog,
   CommandEmpty,
@@ -11,19 +12,15 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import { formatPrice } from "@/lib/format";
 import { suggest } from "@/services/search.service";
-import type { SearchSuggestion } from "@/types/api";
-
-function formatPrice(priceCents: number): string {
-  return `${Math.round(priceCents / 100).toLocaleString("ru-RU")} ₽`;
-}
 
 /**
  * Header search: icon opens a command palette that live-queries the public
- * suggest endpoint. Loading is derived from the last loaded query (no
- * setState in the effect body); stale responses are dropped by the
- * AbortController. Product pages are not built yet, so every selection
- * lands on the catalog for now.
+ * suggest endpoint. React Query owns the request lifecycle (debounced by
+ * the input state; keepPreviousData keeps the last results visible while
+ * the next query loads). Product pages are not built yet, so every
+ * selection lands on the catalog for now.
  */
 export function SearchDialog({
   open,
@@ -34,46 +31,37 @@ export function SearchDialog({
 }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
-  const [loaded, setLoaded] = useState<{ q: string; results: SearchSuggestion | null } | null>(
-    null,
-  );
 
   const trimmed = query.trim();
   const isActive = trimmed.length >= 2;
 
-  useEffect(() => {
-    if (!isActive) {
-      return;
-    }
-    const controller = new AbortController();
-    const timer = setTimeout(() => {
-      suggest(trimmed, controller.signal)
-        .then((results) => {
-          if (!controller.signal.aborted) {
-            setLoaded({ q: trimmed, results });
-          }
-        })
-        .catch(() => {
-          if (!controller.signal.aborted) {
-            setLoaded({ q: trimmed, results: null });
-          }
-        });
-    }, 250);
-    return () => {
-      controller.abort();
-      clearTimeout(timer);
-    };
-  }, [trimmed, isActive]);
-
-  const results = isActive && loaded?.q === trimmed ? loaded.results : null;
-  const loading = isActive && loaded?.q !== trimmed;
+  const results = useQuery({
+    queryKey: ["suggest", trimmed],
+    queryFn: ({ signal }) => suggest(trimmed, signal),
+    enabled: open && isActive,
+    placeholderData: keepPreviousData,
+    staleTime: 30_000,
+  });
 
   const go = (href: string) => {
     onOpenChange(false);
     router.push(href);
   };
 
-  const hasResults = results !== null && (results.products.length > 0 || results.categories.length > 0);
+  const goProduct = (slug: string) => {
+    onOpenChange(false);
+    router.push(`/products/${slug}`);
+  };
+
+  const goCategory = (slug: string) => {
+    onOpenChange(false);
+    router.push(`/products?category=${slug}`);
+  };
+
+  const data = results.data;
+  const hasResults =
+    data !== undefined &&
+    (data.products.length > 0 || data.categories.length > 0);
 
   return (
     <CommandDialog
@@ -88,17 +76,17 @@ export function SearchDialog({
         placeholder="Найти игру или сервис…"
       />
       <CommandList>
-        {loading ? (
+        {results.isPending && isActive ? (
           <p className="text-muted-foreground py-6 text-center text-sm">Ищем…</p>
-        ) : hasResults ? (
+        ) : hasResults && data ? (
           <>
-            {results.categories.length > 0 ? (
+            {data.categories.length > 0 ? (
               <CommandGroup heading="Категории">
-                {results.categories.map((category) => (
+                {data.categories.map((category) => (
                   <CommandItem
                     key={category.id}
                     value={`category-${category.name}`}
-                    onSelect={() => go("/products")}
+                    onSelect={() => goCategory(category.slug)}
                   >
                     <Folder />
                     {category.name}
@@ -106,13 +94,13 @@ export function SearchDialog({
                 ))}
               </CommandGroup>
             ) : null}
-            {results.products.length > 0 ? (
+            {data.products.length > 0 ? (
               <CommandGroup heading="Товары">
-                {results.products.map((product) => (
+                {data.products.map((product) => (
                   <CommandItem
                     key={product.id}
                     value={`product-${product.title}`}
-                    onSelect={() => go("/products")}
+                    onSelect={() => goProduct(product.slug)}
                   >
                     <Gamepad2 />
                     <span className="flex-1 truncate">{product.title}</span>

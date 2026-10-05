@@ -22,3 +22,19 @@ export function signOut(): Promise<void> {
 export function me(headers?: Record<string, string>): Promise<AuthUser> {
   return apiFetch<AuthUser>("/auth/me", { headers });
 }
+
+/** Self-service profile edit; returns the fresh profile. */
+export function updateProfile(body: {
+  name?: string;
+  avatarUrl?: string;
+}): Promise<AuthUser> {
+  return apiFetch<AuthUser>("/auth/me", { method: "PATCH", body });
+}
+
+/** Verifies the current password and replaces it; other sessions die. */
+export function changePassword(body: {
+  currentPassword: string;
+  newPassword: string;
+}): Promise<void> {
+  return apiFetch<void>("/auth/password", { method: "POST", body });
+}

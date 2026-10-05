@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import {
   ConflictException,
   Injectable,
@@ -15,6 +15,7 @@ import type { User } from '../generated/prisma/client.js';
 import { UsersService } from '../users/users.service.js';
 import type { LoginDto } from './dto/login.dto.js';
 import type { RegisterDto } from './dto/register.dto.js';
+import type { UpdateProfileDto } from './dto/update-profile.dto.js';
 import type { JwtPayload } from './strategies/jwt.strategy.js';
 
 /** Both halves ride to the client as httpOnly cookies (Set-Cookie on the
@@ -52,6 +53,16 @@ export class AuthService {
     const email = normalizeEmail(dto.email);
     const existing = await this.usersService.findByEmail(email);
     if (existing) {
+      // A passwordless account was auto-created by guest checkout —
+      // registering with the same email CLAIMS it (purchases follow).
+      if (existing.passwordHash === null) {
+        const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
+        const user = await this.prisma.user.update({
+          where: { id: existing.id },
+          data: { passwordHash, name: dto.name ?? existing.name },
+        });
+        return this.issueSession(user);
+      }
       throw new ConflictException({
         message: 'Email is already registered',
         errors: { email: ['Email is already registered'] },
@@ -73,12 +84,14 @@ export class AuthService {
     if (!user || !passwordMatches) {
       throw new UnauthorizedException('Invalid email or password');
     }
+    await this.purgeExpiredTokens();
     return this.issueSession(user);
   }
 
-  /** Rotate-on-use: the presented token is revoked and a fresh pair is
-   * issued, so a stolen refresh token stops working after the first replay
-   * and every refresh bounds the access-token lifetime. */
+  /** Rotate-on-use within a token family: the presented token is revoked
+   * and a fresh pair (same familyId) is issued. Presenting a REVOKED token
+   * is the signature of a stolen cookie — the whole family is revoked so
+   * the thief and the legitimate holder are both forced to re-login. */
   async refreshSession(refreshToken: string | undefined): Promise<AuthResult> {
     if (!refreshToken) {
       throw new UnauthorizedException('Missing session token');
@@ -87,14 +100,21 @@ export class AuthService {
       where: { tokenHash: hashToken(refreshToken) },
       include: { user: true },
     });
-    if (!stored || stored.revokedAt || stored.expiresAt <= new Date()) {
+    if (stored?.revokedAt) {
+      await this.prisma.refreshToken.updateMany({
+        where: { familyId: stored.familyId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      throw new UnauthorizedException('Session expired or revoked');
+    }
+    if (!stored || stored.expiresAt <= new Date()) {
       throw new UnauthorizedException('Session expired or revoked');
     }
     await this.prisma.refreshToken.update({
       where: { id: stored.id },
       data: { revokedAt: new Date() },
     });
-    return this.issueSession(stored.user);
+    return this.issueSession(stored.user, stored.familyId);
   }
 
   async revokeSession(refreshToken: string | undefined): Promise<void> {
@@ -112,7 +132,18 @@ export class AuthService {
     return this.dummyHash;
   }
 
-  private async issueSession(user: User): Promise<AuthResult> {
+  /** Opportunistic TTL hygiene (runs on login): rows past their expiry
+   * are dead weight — no session can ever resume them. */
+  private purgeExpiredTokens(): Promise<unknown> {
+    return this.prisma.refreshToken.deleteMany({
+      where: { expiresAt: { lt: new Date() } },
+    });
+  }
+
+  private async issueSession(
+    user: User,
+    familyId?: string,
+  ): Promise<AuthResult> {
     const payload: JwtPayload = {
       sub: user.id,
       email: user.email,
@@ -123,6 +154,7 @@ export class AuthService {
     await this.prisma.refreshToken.create({
       data: {
         tokenHash: hashToken(refreshToken),
+        familyId: familyId ?? randomUUID(),
         userId: user.id,
         expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
       },
@@ -131,9 +163,69 @@ export class AuthService {
       id: user.id,
       email: user.email,
       name: user.name,
+      avatarUrl: user.avatarUrl,
       role: user.role,
       permissions: user.permissions as AuthUser['permissions'],
     };
     return { accessToken, refreshToken, user: authUser };
+  }
+
+  /** Self-service profile fields (name, avatar). Returns the fresh view.
+   * Empty strings clear the field; undefined leaves it unchanged. */
+  async updateProfile(
+    userId: string,
+    dto: UpdateProfileDto,
+  ): Promise<AuthUser> {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        name: dto.name === '' ? null : dto.name,
+        avatarUrl: dto.avatarUrl === '' ? null : dto.avatarUrl,
+      },
+    });
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      avatarUrl: user.avatarUrl,
+      role: user.role,
+      permissions: user.permissions as AuthUser['permissions'],
+    };
+  }
+
+  /** Verifies the current password, replaces the hash and revokes every
+   * other session (the calling one stays alive — no re-login needed). */
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+    currentRefreshToken: string | undefined,
+  ): Promise<void> {
+    const user = await this.usersService.findById(userId);
+    if (!user || user.passwordHash === null) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+    const passwordMatches = await bcrypt.compare(
+      currentPassword,
+      user.passwordHash,
+    );
+    if (!passwordMatches) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+    const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash },
+    });
+    await this.prisma.refreshToken.updateMany({
+      where: {
+        userId,
+        revokedAt: null,
+        ...(currentRefreshToken
+          ? { tokenHash: { not: hashToken(currentRefreshToken) } }
+          : {}),
+      },
+      data: { revokedAt: new Date() },
+    });
   }
 }

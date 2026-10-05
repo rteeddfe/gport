@@ -11,7 +11,9 @@ export interface FaqItemInput {
 
 /** Public read: active items only (the storefront FAQ block). */
 export function getFaq(): Promise<FaqItem[]> {
-  return apiFetch<FaqItem[]>("/faq");
+  return apiFetch<FaqItem[]>("/faq", {
+    next: { tags: ["faq"], revalidate: 300 },
+  });
 }
 
 /** Admin read: everything, including hidden items. */

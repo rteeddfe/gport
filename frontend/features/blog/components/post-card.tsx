@@ -1,16 +1,8 @@
 import Image from "next/image";
 import Link from "next/link";
 
+import { formatDateLong } from "@/lib/format";
 import type { Post } from "@/types/api";
-
-/** Long-form ru date for the blog («4 октября 2026 г.»). */
-export function formatPostDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("ru-RU", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
-}
 
 /**
  * Blog card for /blog and the homepage news block: horizontal cover
@@ -55,7 +47,7 @@ export function PostCard({ post }: { post: Post }) {
           dateTime={post.publishedAt ?? post.updatedAt}
           className="text-neon text-xs font-medium"
         >
-          {formatPostDate(post.publishedAt ?? post.updatedAt)}
+          {formatDateLong(post.publishedAt ?? post.updatedAt)}
         </time>
         <h3 className="mt-1.5 text-base font-semibold leading-snug">{post.title}</h3>
         {post.excerpt ? (

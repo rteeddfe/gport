@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
@@ -17,6 +18,8 @@ import { Roles } from '../common/decorators/roles.decorator.js';
 import { Role } from '../generated/prisma/client.js';
 import { AdminFindProductsDto } from './dto/admin-find-products.dto.js';
 import { CreateProductDto } from './dto/create-product.dto.js';
+import { ReplaceProductFaqDto } from './dto/replace-product-faq.dto.js';
+import { ReplaceProductKeysDto } from './dto/replace-product-keys.dto.js';
 import { UpdateProductDto } from './dto/update-product.dto.js';
 import {
   PaginatedProducts,
@@ -40,6 +43,36 @@ export class AdminProductsController {
   @Get(':id')
   findOne(@Param('id', ParseUUIDPipe) id: string): Promise<ProductWithCategory> {
     return this.productsService.findOne(id);
+  }
+
+  @Get(':id/keys')
+  listKeys(@Param('id', ParseUUIDPipe) id: string) {
+    return this.productsService.listKeys(id);
+  }
+
+  @Put(':id/keys')
+  @HttpCode(HttpStatus.OK)
+  async replaceKeys(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReplaceProductKeysDto,
+  ): Promise<{ ok: true }> {
+    await this.productsService.replaceKeys(id, dto.keys);
+    return { ok: true };
+  }
+
+  @Get(':id/faq')
+  listFaq(@Param('id', ParseUUIDPipe) id: string) {
+    return this.productsService.listFaq(id);
+  }
+
+  @Put(':id/faq')
+  @HttpCode(HttpStatus.OK)
+  async replaceFaq(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReplaceProductFaqDto,
+  ): Promise<{ ok: true }> {
+    await this.productsService.replaceFaq(id, dto.faq);
+    return { ok: true };
   }
 
   @Post()

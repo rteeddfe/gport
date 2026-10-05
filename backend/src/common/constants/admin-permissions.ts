@@ -4,9 +4,12 @@
  * bypasses it — see RolesGuard. */
 export const ADMIN_PERMISSIONS = [
   'products',
+  'orders',
+  'files',
   'posts',
   'reviews',
   'promo-codes',
+  'support',
 ] as const;
 
 export type AdminPermission = (typeof ADMIN_PERMISSIONS)[number];

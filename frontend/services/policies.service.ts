@@ -10,11 +10,15 @@ export interface PolicyInput {
 }
 
 export function getPolicies(): Promise<PolicyPageSummary[]> {
-  return apiFetch<PolicyPageSummary[]>("/policies");
+  return apiFetch<PolicyPageSummary[]>("/policies", {
+    next: { tags: ["policies"], revalidate: 300 },
+  });
 }
 
 export function getPolicy(slug: string): Promise<PolicyPage> {
-  return apiFetch<PolicyPage>(`/policies/${slug}`);
+  return apiFetch<PolicyPage>(`/policies/${slug}`, {
+    next: { tags: ["policies"], revalidate: 300 },
+  });
 }
 
 export function createPolicy(input: PolicyInput): Promise<PolicyPage> {

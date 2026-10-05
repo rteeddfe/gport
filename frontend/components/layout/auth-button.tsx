@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { UserAvatar } from "@/components/shared/user-avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,8 +40,6 @@ export function AuthButton() {
     );
   }
 
-  const initial = (user.name ?? user.email).charAt(0).toUpperCase();
-
   const handleSignOut = async () => {
     try {
       await signOut();
@@ -60,9 +59,7 @@ export function AuthButton() {
           className="rounded-full"
           aria-label="Аккаунт"
         >
-          <span className="bg-brand/15 text-brand-bright ring-brand/40 flex size-8 items-center justify-center rounded-full text-sm font-semibold ring-1">
-            {initial}
-          </span>
+          <UserAvatar user={user} />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">

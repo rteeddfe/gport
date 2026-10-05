@@ -1,17 +1,16 @@
 import { cookies } from "next/headers";
 
 import { Container } from "@/components/layout/container";
-import { Badge } from "@/components/ui/badge";
-import { EmptyState } from "@/components/shared/empty-state";
 import { DashboardNav } from "@/features/account/components/dashboard-nav";
+import { ProfileSettings } from "@/features/account/components/profile-settings";
 import { me } from "@/services/auth.service";
 import type { AuthUser } from "@/types/api";
 
 export const metadata = { title: "Профиль" };
 
-/** Read-only profile. Server Component: the browser cookies are forwarded
- * manually (a server fetch has no cookie jar of its own). Editing waits for
- * a profile-update API. */
+/** Profile settings. Server Component shell fetches the session profile
+ * once (the browser cookies are forwarded manually — a server fetch has
+ * no cookie jar of its own); the forms live in ProfileSettings. */
 export default async function ProfilePage() {
   const cookieHeader = (await cookies()).toString();
 
@@ -38,26 +37,7 @@ export default async function ProfilePage() {
           <DashboardNav />
         </div>
 
-        {user ? (
-          <dl className="border-border bg-surface mt-8 grid gap-x-8 gap-y-4 rounded-2xl border p-6 sm:grid-cols-[10rem_1fr]">
-            <dt className="text-muted-foreground text-sm">Имя</dt>
-            <dd className="text-sm font-medium">{user.name ?? "—"}</dd>
-            <dt className="text-muted-foreground text-sm">Email</dt>
-            <dd className="text-sm font-medium">{user.email}</dd>
-            <dt className="text-muted-foreground text-sm">Роль</dt>
-            <dd>
-              <Badge variant="secondary" className="text-[10px] uppercase">
-                {user.role}
-              </Badge>
-            </dd>
-          </dl>
-        ) : null}
-
-        <EmptyState
-          className="mt-6"
-          title="Редактирование в разработке"
-          description="Смена имени и пароля появится вместе с API профиля."
-        />
+        {user ? <ProfileSettings user={user} /> : null}
       </div>
     </Container>
   );

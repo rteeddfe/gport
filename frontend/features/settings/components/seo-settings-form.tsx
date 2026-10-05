@@ -169,7 +169,7 @@ export function SeoSettingsForm({ settings }: SeoSettingsFormProps) {
             label="Фавиконка"
             value={form.watch("faviconUrl")}
             onChange={(url) => form.setValue("faviconUrl", url)}
-            hint="SVG или ICO"
+            hint="ICO или PNG"
           />
           <ImageUpload
             label="Иконка 192×192"

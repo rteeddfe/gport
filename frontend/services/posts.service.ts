@@ -11,12 +11,16 @@ export interface FindPostsParams {
 
 /** Public blog list — the backend returns PUBLISHED posts only. */
 export function getPosts(params: FindPostsParams = {}): Promise<Paginated<Post>> {
-  return apiFetch<Paginated<Post>>(`/posts${buildQuery({ ...params })}`);
+  return apiFetch<Paginated<Post>>(`/posts${buildQuery({ ...params })}`, {
+    next: { tags: ["posts"], revalidate: 300 },
+  });
 }
 
 /** Public post page is slug-addressed (GET /posts/:slug). */
 export function getPost(slug: string): Promise<Post> {
-  return apiFetch<Post>(`/posts/${slug}`);
+  return apiFetch<Post>(`/posts/${slug}`, {
+    next: { tags: ["posts"], revalidate: 300 },
+  });
 }
 
 export interface AdminPostInput {

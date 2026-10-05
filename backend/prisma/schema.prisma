@@ -22,6 +22,33 @@ enum ProductStatus {
   ARCHIVED
 }
 
+/// What the buyer actually gets (igromir-style product kinds):
+/// GAME_KEY — a fixed-price digital key / gift code (auto-delivered
+/// from the key pool), TOPUP_NOMINAL — a fixed nominal of game currency
+/// or a service package (picked from the variant list),
+/// TOPUP_AMOUNT — a wallet top-up for a buyer-entered amount in a range.
+enum ProductKind {
+  GAME_KEY
+  TOPUP_NOMINAL
+  TOPUP_AMOUNT
+}
+
+/// How a paid product is fulfilled: AUTO_CODE — a key/code is assigned
+/// automatically on payment; MANUAL — the operator performs the crediting
+/// (used while provider top-up APIs are not integrated).
+enum CreditingMode {
+  AUTO_CODE
+  MANUAL
+}
+
+/// The account field the buyer fills on checkout (Steam login, player
+/// ID, recipient email) — hints and validation on the storefront.
+enum AccountFieldKind {
+  LOGIN
+  ID
+  EMAIL
+}
+
 enum DiscountType {
   PERCENT
   FIXED
@@ -38,28 +65,47 @@ enum ReviewStatus {
   REJECTED
 }
 
+/// Support tickets from the storefront bubble. New ones land unassigned;
+/// admins move them through the pipeline (or delete spam).
+enum SupportTicketStatus {
+  NEW
+  IN_PROGRESS
+  RESOLVED
+}
+
 model User {
-  id           String   @id @default(uuid()) @db.Uuid
-  email        String   @unique
-  passwordHash String
-  name         String?
+  id    String  @id @default(uuid()) @db.Uuid
+  email String  @unique
+  /// Null = a passwordless account auto-created by guest checkout (email
+  /// only, to hold the purchases). Registering with the same email claims
+  /// the account by setting a password.
+  passwordHash String?
+  name  String?
+  /// Profile avatar — an app path or an uploaded /files/:id URL (same
+  /// convention as SiteSettings.logoUrl / product images).
+  avatarUrl    String?
   role         Role     @default(USER)
   /// Admin tab access for ADMINs, validated against ADMIN_PERMISSIONS
-  /// (products | posts | reviews | promo-codes). Ignored for USER and
-  /// bypassed for SUPER_ADMIN. Managed by SUPER_ADMIN in /admin/users.
+  /// (products | orders | files | posts | reviews | promo-codes). Ignored
+  /// for USER and bypassed for SUPER_ADMIN. Managed by SUPER_ADMIN in
+  /// /admin/users.
   permissions  String[] @default([])
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  cart          Cart?
   refreshTokens RefreshToken[]
+  orders        Order[]
 }
 
 /// Opaque session tokens (only the SHA-256 hash is stored). Rotation on
 /// every refresh; revocation on logout. Rows cascade with their user.
+/// familyId chains the rotations of one login: replaying a revoked token
+/// revokes the whole family (reuse detection — a stolen token kills the
+/// session it came from).
 model RefreshToken {
   id        String    @id @default(uuid()) @db.Uuid
   tokenHash String    @unique
+  familyId  String    @db.Uuid
   userId    String    @db.Uuid
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   expiresAt DateTime
@@ -68,6 +114,9 @@ model RefreshToken {
   updatedAt DateTime  @updatedAt
 
   @@index([userId])
+  @@index([familyId])
+  // Opportunistic TTL cleanup runs on login (expired rows purge).
+  @@index([expiresAt])
 }
 
 model Category {
@@ -99,42 +148,75 @@ model Product {
   stock         Int           @default(0)
   currency      String        @default("RUB")
   status        ProductStatus @default(DRAFT)
+  /// Product kind — drives the checkout form and fulfillment rules.
+  kind          ProductKind   @default(GAME_KEY)
+  /// TOPUP_AMOUNT only: the buyer-entered amount range (kopecks).
+  minValue      Int?
+  maxValue      Int?
+  /// Service commission on top of the credited amount, percent 0..50
+  /// (TOPUP_* kinds; 0 = no fee). The backend adds it to the order total.
+  commissionPercent Int @default(0)
+  /// How the paid order is fulfilled (codes vs operator).
+  creditingMode CreditingMode @default(AUTO_CODE)
+  /// Checkout account-field config for top-ups («Логин Steam», Player ID).
+  accountFieldKind  AccountFieldKind?
+  accountFieldLabel String?
+  accountFieldHint  String?
+  /// Source-system id of an imported product (idempotent re-imports).
+  externalId    String?       @unique
   categoryId    String        @db.Uuid
   category      Category      @relation(fields: [categoryId], references: [id])
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
-  cartItems CartItem[]
+  orderItems OrderItem[]
+  keys       ProductKey[]
+  faq        ProductFaq[]
+  variants   ProductVariant[]
 
   @@index([categoryId])
   @@index([status])
+  // Hot catalog paths: the plain listing (status + newest first) and the
+  // per-category listing (status + category + newest first).
+  @@index([status, createdAt])
+  @@index([status, categoryId, createdAt])
 }
 
-model Cart {
-  id                 String   @id @default(uuid()) @db.Uuid
-  userId             String?  @unique @db.Uuid
-  user               User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  guestToken         String?  @unique
-  appliedPromoCodeId String?  @db.Uuid
-  promoCode          PromoCode? @relation(fields: [appliedPromoCodeId], references: [id], onDelete: SetNull)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+/// A purchasable nominal of a TOPUP_NOMINAL product («60 UC», «1 месяц»):
+/// its own price; labels/values are snapshots into the order item.
+model ProductVariant {
+  id            String  @id @default(uuid()) @db.Uuid
+  productId     String  @db.Uuid
+  product       Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  /// Display label of the nominal («60 UC», «1 месяц», «+1000 ₽»).
+  label         String
+  /// Numeric value in the product's unit (60 UC → 60); optional when the
+  /// label alone is enough.
+  value         Int?
+  /// Unit caption of the value (UC, GOLD, мес, ₽).
+  unit          String?
+  priceCents    Int
+  oldPriceCents Int?
+  sortOrder     Int     @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  items CartItem[]
+  @@index([productId, sortOrder])
 }
 
-model CartItem {
-  id        String   @id @default(uuid()) @db.Uuid
-  cartId    String   @db.Uuid
-  cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
-  productId String   @db.Uuid
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  quantity  Int      @default(1)
+/// Per-product FAQ rendered on the product page (below the description)
+/// and managed in the admin product form.
+model ProductFaq {
+  id        String  @id @default(uuid()) @db.Uuid
+  productId String  @db.Uuid
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  question  String
+  answer    String
+  sortOrder Int     @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([cartId, productId])
-  @@index([cartId])
+  @@index([productId, sortOrder])
 }
 
 model PromoCode {
@@ -151,8 +233,108 @@ model PromoCode {
   minSubtotalCents Int?
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
+}
 
-  carts Cart[]
+enum OrderStatus {
+  AWAITING_PAYMENT
+  PAID
+  CANCELLED
+}
+
+/// Direct purchase (no cart): one product, snapshot pricing, one payment
+/// session. Fulfillment is auto-delivery on payment (keys or the
+/// product's activation instruction). userId is null for a guest checkout
+/// that named an email of an existing REGISTERED account — the purchase
+/// is delivered by letter and never attaches to someone else's profile.
+model Order {
+  id           String      @id @default(uuid()) @db.Uuid
+  userId       String?     @db.Uuid
+  user         User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status       OrderStatus @default(AWAITING_PAYMENT)
+  totalCents   Int
+  currency     String      @default("RUB")
+  /// Buyer email snapshot — the letter recipient even without an account.
+  email        String?
+  /// Payment provider id ("test" = the emulator; real acquirers later).
+  provider     String
+  /// Payment session token at the provider — the emulator page address
+  /// part and the webhook capability. Unique per order.
+  paymentToken String?     @unique
+  paidAt       DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  items  OrderItem[]
+  emails EmailLog[]
+
+  @@index([userId, createdAt])
+  @@index([status])
+  // The admin list sorts by createdAt without a status filter.
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id             String  @id @default(uuid()) @db.Uuid
+  orderId        String  @db.Uuid
+  order          Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId      String  @db.Uuid
+  product        Product @relation(fields: [productId], references: [id])
+  /// Snapshot at purchase time — the product title/price may change later.
+  productTitle   String
+  unitPriceCents Int
+  quantity       Int
+  /// Snapshot of the chosen nominal (TOPUP_NOMINAL) — null for keys.
+  variantLabel   String?
+  /// TOPUP_AMOUNT only: the buyer-entered amount snapshot (kopecks).
+  amountCents    Int?
+  /// Snapshot of the service commission charged on top of amountCents.
+  commissionCents Int?
+  /// Where to credit: Steam login, player ID, recipient email…
+  accountIdentifier String?
+
+  keys ProductKey[]
+
+  @@index([orderId])
+}
+
+/// Auto-delivery stock: one digital key / license code per sold unit.
+model ProductKey {
+  id          String     @id @default(uuid()) @db.Uuid
+  productId   String     @db.Uuid
+  product     Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  value       String
+  isSold      Boolean    @default(false)
+  orderItemId String?    @db.Uuid
+  orderItem   OrderItem? @relation(fields: [orderItemId], references: [id])
+  createdAt   DateTime   @default(now())
+
+  @@index([productId, isSold])
+  // Delivering an order fetches its keys (WHERE orderItemId IN …).
+  @@index([orderItemId])
+}
+
+/// Outbox of transactional letters. No SMTP provider is connected yet —
+/// the rows ARE the delivery, which the test acquiring flow can verify.
+model EmailLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  orderId   String?  @db.Uuid
+  order     Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  to        String
+  subject   String
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+/// Singleton row (id = 1): acquiring configuration. testEnabled runs the
+/// emulator; providers holds per-acquirer { enabled, config } for the
+/// real integrations (fields defined by PAYMENT_PROVIDERS).
+model PaymentSettings {
+  id          Int      @id @default(1)
+  testEnabled Boolean  @default(true)
+  providers   Json     @default("{}")
+  updatedAt   DateTime @updatedAt
 }
 
 /// Singleton row (id = 1): site-wide content managed from the admin
@@ -197,7 +379,19 @@ model HomeContent {
   ctaHref     String   @default("/products")
   /// Exactly four advantage tile texts (01–04).
   tiles       Json     @default("[\"Без ограничений, регистрации и верификации\", \"Без скрытых комиссий и платежей\", \"Моментальная доставка после оплаты\", \"Много способов оплаты\"]")
-  updatedAt   DateTime @updatedAt
+  /// Admin-managed cards of the home top-up wall: [{ imageUrl, href }].
+  /// Empty array = the wall falls back to the built-in service tiles.
+  wallCards     Json     @default("[]")
+  /// Admin-managed cards of the hero cylinder carousel: [{ imageUrl, href }].
+  /// Empty array = the carousel keeps its built-in placeholder covers.
+  carouselCards Json     @default("[]")
+  /// Home top-up FORM services: [{ productId, iconUrl? }] picked from the
+  /// top-up products. Empty array = the form block hides.
+  topupServices Json     @default("[]")
+  /// Home service WALL tiles: [{ productId, iconUrl? }] (block 3).
+  /// Empty array = the wall falls back to the built-in service tiles.
+  serviceCards  Json     @default("[]")
+  updatedAt     DateTime @updatedAt
 }
 
 /// Legal documents rendered on /policies/[slug]; content is sanitized
@@ -231,6 +425,27 @@ model Post {
   @@index([status, publishedAt])
 }
 
+/// Support tickets from the storefront bubble («Поддержка 24/7»). New ones
+/// land unassigned; admins move them through the pipeline. `ip` powers the
+/// anti-spam limits (same model as reviews) and never leaves the admin area.
+model SupportTicket {
+  id        String             @id @default(uuid()) @db.Uuid
+  /// Optional display name from the form.
+  name      String?
+  /// Where to answer: email, @telegram, phone — free-form by design.
+  contact   String
+  message   String
+  status    SupportTicketStatus @default(NEW)
+  /// Rate-limiter + spam moderation context, never exposed publicly.
+  ip        String?
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  @@index([status, createdAt])
+  @@index([ip, createdAt])
+  @@index([createdAt])
+}
+
 /// Storefront reviews submitted from the public form. Every submission
 /// lands in PENDING and appears publicly only after an admin publishes it.
 /// `ip` powers the rate limits (1/minute per IP, 40/hour globally) and
@@ -248,6 +463,8 @@ model Review {
 
   @@index([status, createdAt])
   @@index([ip, createdAt])
+  // The submission rate limiter counts the last hour globally.
+  @@index([createdAt])
 }
 
 /// FAQ constructor entries for the storefront FAQ block.

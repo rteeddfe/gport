@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, PostStatus } from '../generated/prisma/client.js';
+import { sanitizeRichText } from '../common/utils/sanitize.js';
 import { slugify } from '../common/utils/slugify.js';
 import { PrismaService } from '../database/prisma.service.js';
 import type { AdminFindPostsDto } from './dto/find-posts.dto.js';
@@ -68,7 +69,8 @@ export class PostsService {
         title: dto.title,
         slug,
         excerpt: dto.excerpt ?? '',
-        content: dto.content ?? '',
+        // Same XSS gate as policies: the rich text renders as HTML.
+        content: sanitizeRichText(dto.content ?? ''),
         coverImageUrl: dto.coverImageUrl ?? null,
         status,
         // First publish stamps the public date; drafts stay undated.
@@ -91,7 +93,10 @@ export class PostsService {
         title: dto.title,
         slug: dto.slug,
         excerpt: dto.excerpt,
-        content: dto.content,
+        // Same XSS gate as policies: the rich text renders as HTML.
+        ...(dto.content !== undefined
+          ? { content: sanitizeRichText(dto.content) }
+          : {}),
         coverImageUrl: dto.coverImageUrl,
         status: dto.status,
         publishedAt:

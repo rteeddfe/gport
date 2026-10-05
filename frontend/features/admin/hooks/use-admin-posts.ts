@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { revalidateStorefrontTags } from "@/lib/revalidate";
 import {
   adminCreatePost,
   adminDeletePost,
@@ -33,6 +34,7 @@ export function useAdminPostMutations() {
   const invalidate = () => {
     // The public /blog pages read the same rows server-side; admin list
     // keeps its own cache.
+    void revalidateStorefrontTags(["posts"]);
     queryClient.invalidateQueries({ queryKey: ["admin-posts"] });
   };
 

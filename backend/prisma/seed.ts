@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import 'dotenv/config';
 import bcrypt from 'bcryptjs';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -436,81 +438,23 @@ async function main(): Promise<void> {
       ]),
     ].join('');
 
+  // Real legal documents (RF law based; entity details are placeholders
+  // like [ИНН] — replace before going live). Kept in prisma/legal/*.html.
   const policyPages = [
-    {
-      slug: 'privacy',
-      title: 'Политика конфиденциальности',
-      sortOrder: 1,
-      sections: [
-        '1. Общие положения',
-        '2. Какие данные мы обрабатываем',
-        '3. Цели обработки данных',
-        '4. Передача данных третьим лицам',
-        '5. Хранение и защита данных',
-        '6. Ваши права как субъекта данных',
-        '7. Изменения политики',
-      ],
-    },
-    {
-      slug: 'offer',
-      title: 'Публичная оферта',
-      sortOrder: 2,
-      sections: [
-        '1. Термины и определения',
-        '2. Предмет оферты',
-        '3. Акцепт оферты',
-        '4. Цена и порядок оплаты',
-        '5. Передача цифрового товара',
-        '6. Возврат и обмен',
-        '7. Ответственность сторон',
-        '8. Заключительные положения',
-      ],
-    },
-    {
-      slug: 'refund',
-      title: 'Политика возврата средств',
-      sortOrder: 3,
-      sections: [
-        '1. Общие условия возврата',
-        '2. Возврат до передачи товара',
-        '3. Возврат после передачи товара',
-        '4. Как оформить возврат',
-        '5. Сроки рассмотрения и зачисления',
-      ],
-    },
-    {
-      slug: 'contacts',
-      title: 'Контакты',
-      sortOrder: 4,
-      sections: [
-        'Служба поддержки',
-        'Режим работы',
-        'Деловые запросы',
-        'Правообладателям',
-      ],
-    },
-    {
-      slug: 'rightsholders',
-      title: 'Информация для правообладателей',
-      sortOrder: 5,
-      sections: [
-        '1. Общие положения',
-        '2. Порядок обращения',
-        '3. Обязательные сведения в обращении',
-        '4. Сроки рассмотрения',
-        '5. Последствия подтверждения нарушения',
-      ],
-    },
+    { slug: 'oferta', title: 'Публичная оферта', sortOrder: 1 },
+    { slug: 'privacy', title: 'Политика конфиденциальности', sortOrder: 2 },
+    { slug: 'refund', title: 'Политика возврата средств', sortOrder: 3 },
+    { slug: 'rights-holders', title: 'Информация для правообладателей', sortOrder: 4 },
+    { slug: 'terms', title: 'Пользовательское соглашение', sortOrder: 5 },
   ];
 
+  const legalDir = join(import.meta.dirname, 'legal');
   for (const doc of policyPages) {
-    const content = policyToHtml(
-      LOREM,
-      doc.sections.map((heading) => ({ heading, paragraphs: [LOREM] })),
-    );
+    const content = readFileSync(join(legalDir, doc.slug + '.html'), 'utf8');
     await prisma.policyPage.upsert({
       where: { slug: doc.slug },
-      update: {},
+      // Re-seeding refreshes the legal texts; admins may edit them after.
+      update: { content, sortOrder: doc.sortOrder },
       create: { slug: doc.slug, title: doc.title, content, sortOrder: doc.sortOrder },
     });
   }

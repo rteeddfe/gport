@@ -45,11 +45,21 @@ through the service layer — no client JS needed for it.
 component → React Query hook (features/*/hooks) → services/*.service.ts → lib/api/client.ts → NestJS
 ```
 
-- `apiFetch` sends JSON, attaches `Authorization: Bearer <token>` from the
-  auth store, uses `credentials: 'include'` and `cache: 'no-store'` by default,
-  clears the session on 401 and throws `ApiError` with the backend's
-  `{ statusCode, message, errors }` shape.
+- `apiFetch` sends JSON, uses `credentials: 'include'` and `cache: 'no-store'`
+  by default, performs one silent `POST /auth/refresh` on a 401 and throws
+  `ApiError` with the backend's `{ statusCode, message, errors }` shape.
 - Server Components call the same services directly (server-side fetch).
+  Public GET services pass `next: { tags, revalidate: 300 }` — the Next
+  Data Cache stores them under their tag (`products`, `posts`, `settings`,
+  `home-content`, `categories`, `reviews`, `faq`, `policies`).
+- **Revalidation**: after an admin mutation the onSuccess handler calls the
+  `revalidateStorefrontTags` server action (`lib/revalidate.ts`,
+  `revalidateTag(tag, "max")`), so server-rendered public pages pick the
+  change up immediately; a missed call self-heals within the 300 s TTL.
+- `app/(public)/loading.tsx` is the route-level streaming shell: with it in
+  place, next/link's dynamic-route prefetch grabs the cheap skeleton
+  instead of executing full server renders (the high-load dam), and
+  navigations show it while the page streams in.
 
 ## State management
 

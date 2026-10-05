@@ -13,6 +13,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "./password-input";
 import { getErrorMessage } from "@/lib/api/errors";
 import { signUpSchema, type SignUpValues } from "@/schemas/auth.schema";
 import { useSignUp } from "../hooks/use-sign-up";
@@ -23,10 +24,12 @@ export function SignUpForm() {
 
   const form = useForm<SignUpValues>({
     resolver: zodResolver(signUpSchema),
-    defaultValues: { name: "", email: "", password: "" },
+    defaultValues: { name: "", email: "", password: "", confirmPassword: "" },
   });
 
-  function onSubmit(values: SignUpValues) {
+  function onSubmit({ confirmPassword: _confirm, ...values }: SignUpValues) {
+    // confirmPassword is client-side only — the backend whitelist rejects it.
+    void _confirm;
     signUp(values, { onSuccess: () => router.push("/dashboard") });
   }
 
@@ -84,9 +87,25 @@ export function SignUpForm() {
             <FormItem>
               <FormLabel>Пароль</FormLabel>
               <FormControl>
-                <Input
-                  type="password"
+                <PasswordInput
                   placeholder="Минимум 8 символов"
+                  autoComplete="new-password"
+                  {...field}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="confirmPassword"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Повторите пароль</FormLabel>
+              <FormControl>
+                <PasswordInput
+                  placeholder="Ещё раз"
                   autoComplete="new-password"
                   {...field}
                 />

@@ -117,13 +117,6 @@ export class PromoCodesService {
     await this.prisma.promoCode.delete({ where: { id } });
   }
 
-  /** Case-insensitive lookup for the cart promo input (codes are stored uppercase). */
-  findByCode(code: string): Promise<PromoCode | null> {
-    return this.prisma.promoCode.findUnique({
-      where: { code: code.trim().toUpperCase() },
-    });
-  }
-
   private async getExisting(id: string): Promise<PromoCode> {
     const promo = await this.prisma.promoCode.findUnique({ where: { id } });
     if (!promo) {

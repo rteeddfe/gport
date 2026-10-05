@@ -20,7 +20,7 @@ export default function NotFound() {
   return (
     <>
       <SiteHeader />
-      <main className="flex flex-1 items-center">
+      <main className="flex flex-1 items-center pt-20">
         <Container className="py-16 sm:py-20">
           <NotFoundCard />
         </Container>

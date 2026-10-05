@@ -1,11 +1,11 @@
 import { Container } from "@/components/layout/container";
-import { EmptyState } from "@/components/shared/empty-state";
 import { DashboardNav } from "@/features/account/components/dashboard-nav";
+import { OrdersList } from "@/features/account/components/orders-list";
 
 export const metadata = { title: "Заказы" };
 
-/** Placeholder — the purchase/orders business process is not approved yet;
- * the section wires up when the orders backend exists. */
+/** The buyer's orders: direct purchases with statuses and the
+ * auto-delivered keys. */
 export default function OrdersPage() {
   return (
     <Container>
@@ -23,11 +23,7 @@ export default function OrdersPage() {
           <DashboardNav />
         </div>
 
-        <EmptyState
-          className="mt-8"
-          title="Раздел в разработке"
-          description="Появится вместе с процессом оформления заказов и оплаты."
-        />
+        <OrdersList />
       </div>
     </Container>
   );

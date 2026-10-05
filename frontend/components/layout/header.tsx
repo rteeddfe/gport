@@ -1,6 +1,14 @@
 "use client";
 
-import { LayoutGrid, Menu, Newspaper, Percent, Search, Wallet } from "lucide-react";
+import {
+  LayoutGrid,
+  Menu,
+  Newspaper,
+  Percent,
+  Search,
+  Wallet,
+} from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -33,8 +41,10 @@ function navItemClass(active: boolean): string {
   );
 }
 
-/** Floating-capsule header (docs/design.md — variant 5). Logo and name
- * come from the admin site settings (SiteHeader fetches them server-side). */
+/** Floating-capsule header (docs/design.md — variant 5), FIXED to the
+ * viewport: every layout that renders it offsets its content by the
+ * header height (pt-20 = pt-4 + h-16). Logo and name come from the admin
+ * site settings (SiteHeader fetches them server-side). */
 export function Header({
   logoUrl = "/logo2.png",
   siteName = "GPort",
@@ -48,19 +58,23 @@ export function Header({
   const [searchOpen, setSearchOpen] = useState(false);
 
   return (
-    <header className="pointer-events-none sticky top-0 z-40 px-4 pt-4">
+    <header className="pointer-events-none fixed inset-x-0 top-0 z-40 px-4 pt-4">
       {/* Smart app banner (iPhone / Android) rides along with the capsule. */}
       <div className="mx-auto max-w-[1200px]">
         <InstallBanner />
       </div>
       <div className="glass border-border/70 pointer-events-auto relative mx-auto flex h-16 max-w-[1200px] items-center gap-6 rounded-2xl border px-5 shadow-[0_10px_50px_-14px_rgba(139,92,246,0.45)]">
         <Link href="/" className="flex shrink-0 items-center gap-2.5">
-          {/* Settings-driven source may be an uploaded SVG (/files/:id) —
-              plain img, next/image would refuse SVG without extra config. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
+          {/* The settings-driven source may be an uploaded SVG (/files/:id)
+              — the optimizer skips SVGs, raster logos get optimized and
+              preloaded (first screen of every page). */}
+          <Image
             src={logoUrl}
             alt={siteName}
+            width={65}
+            height={45}
+            priority
+            unoptimized={logoUrl.toLowerCase().endsWith(".svg")}
             className="h-[45px] w-[65px] object-contain"
           />
           <span className="text-muted-foreground hidden text-[11px] leading-tight lg:block">
