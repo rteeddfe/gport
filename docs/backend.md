@@ -8,12 +8,12 @@ strict, Vitest, oxlint. Runs on port 3001 with global prefix `/api`.
 ```
 src/
   main.ts                # bootstrap: prefix, helmet, CORS, pipes, filter, Swagger
-  app.module.ts          # config + throttler + modules + global guards
+  app.module.ts          # config + rate-limit guard + modules + global guards
   config/                # configuration.ts (typed config), env.validation.ts (Joi)
   database/              # PrismaModule (global), PrismaService (adapter-pg)
   common/
     decorators/          # @Public, @Roles, @RequirePermissions, @CurrentUser
-    guards/              # ThrottlerGuard (global rate limit), JwtAuthGuard,
+    guards/              # RateLimitGuard (global rate limit), JwtAuthGuard,
                          # RolesGuard (all global, in that order)
     filters/             # AllExceptionsFilter -> { statusCode, message, errors? }
     pipes/               # buildApiValidationPipe (whitelist/forbidNonWhitelisted/transform)
@@ -61,10 +61,13 @@ are validated at boot (Joi); the app refuses to start without them.
   (P2002 → 409, P2025 → 404) and never leaks stack traces.
 - **Swagger**: generated from DTOs via the `@nestjs/swagger` CLI plugin
   (nest-cli.json). Mark auth endpoints with `@ApiBearerAuth()`.
-- **Rate limiting**: ThrottlerGuard globally (100 req/min per IP) via
-  ThrottlerModule; sensitive routes tighten it with `@Throttle` — login
+- **Rate limiting**: `RateLimitGuard` globally (100 req/min per IP,
+  in-memory sliding window — ESM-safe replacement for @nestjs/throttler,
+  whose CJS build crashes the Vercel function against the ESM-only
+  @nestjs/common 12); sensitive routes tighten it with `@RateLimit` — login
   5/min, register 3/min, refresh 30/min, order create 5/min, payment
-  webhook 30/min, search suggest 60/min.
+  webhook 30/min, search suggest 60/min. Reviews and support keep their own
+  DB-counted sliding-window limits (1/min per IP + 30/h global).
 - **Sessions**: refresh tokens rotate on every refresh and share a
   `familyId`; replaying a REVOKED token revokes the whole family (reuse
   detection — a stolen cookie kills its own session). Expired rows are

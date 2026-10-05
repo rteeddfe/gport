@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
-import { Throttle } from '@nestjs/throttler';
+import { RateLimit } from '../common/guards/rate-limit.guard.js';
 import type { Request, Response } from 'express';
 import {
   ACCESS_TOKEN_COOKIE,
@@ -51,7 +51,7 @@ export class AuthController {
 
   @Public()
   @Post('register')
-  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  @RateLimit({ limit: 3, ttlMs: 60_000 })
   async register(
     @Body() dto: RegisterDto,
     @Res({ passthrough: true }) response: Response,
@@ -64,7 +64,7 @@ export class AuthController {
   @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @RateLimit({ limit: 5, ttlMs: 60_000 })
   async login(
     @Body() dto: LoginDto,
     @Res({ passthrough: true }) response: Response,
@@ -78,7 +78,7 @@ export class AuthController {
   @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @RateLimit({ limit: 30, ttlMs: 60_000 })
   async refresh(
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,

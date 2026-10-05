@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { Throttle } from '@nestjs/throttler';
+import { RateLimit } from '../common/guards/rate-limit.guard.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import { Public } from '../common/decorators/public.decorator.js';
 import type { AuthUser } from '../common/types/auth-user.js';
@@ -18,7 +18,7 @@ export class OrdersController {
    * the order attaches to the signed-in user. */
   @Public()
   @Post()
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @RateLimit({ limit: 5, ttlMs: 60_000 })
   create(
     @CurrentUser() user: AuthUser | undefined,
     @Body() dto: CreateOrderDto,

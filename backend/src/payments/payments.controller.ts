@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { Throttle } from '@nestjs/throttler';
+import { RateLimit } from '../common/guards/rate-limit.guard.js';
 import { Public } from '../common/decorators/public.decorator.js';
 import { PaymentsService } from './payments.service.js';
 import { TestWebhookDto } from './dto/test-webhook.dto.js';
@@ -28,7 +28,7 @@ export class PaymentsController {
    * (HMAC-signed, idempotent — the same contract a real acquirer has). */
   @Public()
   @Post('webhook/test')
-  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @RateLimit({ limit: 30, ttlMs: 60_000 })
   handleTestWebhook(@Body() dto: TestWebhookDto) {
     return this.paymentsService.handleTestWebhook(dto);
   }

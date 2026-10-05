@@ -1,10 +1,10 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AuthModule } from './auth/auth.module.js';
 import { CategoriesModule } from './categories/categories.module.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard.js';
+import { RateLimitGuard } from './common/guards/rate-limit.guard.js';
 import { RolesGuard } from './common/guards/roles.guard.js';
 import configuration from './config/configuration.js';
 import { envValidationSchema } from './config/env.validation.js';
@@ -32,11 +32,6 @@ import { UsersModule } from './users/users.module.js';
       load: [configuration],
       validationSchema: envValidationSchema,
     }),
-    // Global per-IP rate limit (the first DDoS/brute-force dam). Sensitive
-    // endpoints tighten it with @Throttle — see auth/orders/payments/search.
-    ThrottlerModule.forRoot([
-      { name: 'default', ttl: 60_000, limit: 100 },
-    ]),
     PrismaModule,
     HealthModule,
     UsersModule,
@@ -57,7 +52,9 @@ import { UsersModule } from './users/users.module.js';
     SupportModule,
   ],
   providers: [
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    // Global per-IP rate limit (the first DDoS/brute-force dam). Sensitive
+    // endpoints tighten it with @RateLimit — see auth/orders/payments/search.
+    { provide: APP_GUARD, useClass: RateLimitGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
   ],
