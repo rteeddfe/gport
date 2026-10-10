@@ -7,3 +7,6 @@ Desktop.ini
 *.swp
 backend-dev.log
 pg-dev.log
+
+.vercel
+.env*
