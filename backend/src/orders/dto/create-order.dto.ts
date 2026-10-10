@@ -5,6 +5,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -46,6 +47,14 @@ export class CreateOrderDto {
   @IsInt()
   @Min(1)
   amountCents?: number;
+
+  /** Optional promo code — validated and priced on the backend; an
+   * invalid code fails the whole request. */
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]+$/, { message: 'Промокод: латиница, цифры, "_" и "-"' })
+  @MaxLength(40)
+  promoCode?: string;
 
   /** TOPUP_* only: the account to credit (login, player ID). */
   @IsOptional()

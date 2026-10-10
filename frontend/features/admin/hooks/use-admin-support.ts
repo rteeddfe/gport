@@ -21,7 +21,9 @@ export function useAdminTicketMutations() {
   const queryClient = useQueryClient();
 
   const invalidate = () => {
+    // «admin-pending» keeps the sidebar «новые обращения» chip in sync.
     queryClient.invalidateQueries({ queryKey: ["admin-support"] });
+    queryClient.invalidateQueries({ queryKey: ["admin-pending"] });
   };
 
   const update = useMutation({

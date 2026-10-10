@@ -1,8 +1,4 @@
-import { Injectable } from '@nestjs/common';
 import { HealthService, type HealthCheckResult } from './health.service.js';
-
-@Injectable()
-export class HealthServiceMock extends HealthService {}
 
 describe('HealthService', () => {
   const makeService = (queryRaw: () => Promise<unknown>): HealthService =>

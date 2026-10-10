@@ -1,5 +1,6 @@
 "use client";
 
+import { getErrorMessage } from "@/lib/api/errors";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Plus, Save, Trash2 } from "lucide-react";
@@ -22,10 +23,6 @@ import {
 } from "@/services/policies.service";
 import type { PolicyPageSummary } from "@/types/api";
 import { RichTextEditor } from "./rich-text-editor";
-
-function errorText(cause: unknown): string {
-  return cause instanceof Error ? cause.message : "Ошибка";
-}
 
 interface SelectedDoc {
   id: string;
@@ -73,7 +70,7 @@ function PolicyForm({
       onSelected({ id: saved.id, slug: saved.slug });
       setSavedAt(new Date().toLocaleTimeString("ru-RU"));
     },
-    onError: (cause) => setErrorMessage(errorText(cause)),
+    onError: (cause) => setErrorMessage(getErrorMessage(cause)),
   });
 
   const remove = useMutation({
@@ -83,7 +80,7 @@ function PolicyForm({
       await queryClient.invalidateQueries({ queryKey: ["admin-policies"] });
       onSelected(null);
     },
-    onError: (cause) => setErrorMessage(errorText(cause)),
+    onError: (cause) => setErrorMessage(getErrorMessage(cause)),
   });
 
   if (doc !== null && existing.isPending) {

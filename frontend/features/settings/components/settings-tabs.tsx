@@ -7,7 +7,8 @@ import { cn } from "@/lib/utils";
 
 /** Tabs of the admin «Настройки сайта» section — each tab is its own route
  * (same raised-pill language as the buyer dashboard switcher). The store
- * settings (acquiring) live in their own section: /admin/store. */
+ * settings (acquiring) live in their own section: /admin/store; external
+ * integrations and analytics (OAuth, Метрика) live in /admin/integrations. */
 const TABS = [
   { href: "/admin/settings/general", label: "Основные" },
   { href: "/admin/settings/seo", label: "SEO" },

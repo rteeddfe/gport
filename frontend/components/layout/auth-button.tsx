@@ -10,8 +10,8 @@ import { UserAvatar } from "@/components/shared/user-avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -22,14 +22,33 @@ import { signOut } from "@/services/auth.service";
  * Header auth widget: "Войти" for guests, avatar dropdown for the signed-in
  * user. The session lives in httpOnly cookies validated by /auth/me (see
  * use-me) — nothing is stored client-side.
+ *
+ * `hasSession` is the server-rendered hint (the long-lived refresh cookie's
+ * presence, same signal the proxy gates on): with no cookie the query never
+ * runs and «Войти» renders in the SSR markup — no pop-in after load. With a
+ * cookie the query validates it; until then a neutral placeholder keeps the
+ * layout stable.
  */
-export function AuthButton() {
+export function AuthButton({ hasSession = true }: { hasSession?: boolean }) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { data: user, isPending } = useMe();
+  const { data: user, isPending } = useMe({ enabled: hasSession });
 
-  if (isPending) {
-    return null;
+  // Placeholder only while a REAL check is in flight (a cookie hint said
+  // maybe-logged-in). A disabled query (guest) keeps isPending=true in
+  // TanStack v5 — fall through to «Войти» immediately.
+  if (isPending && hasSession) {
+    return (
+      <Button
+        variant="ghost"
+        size="icon"
+        className="rounded-full"
+        aria-label="Аккаунт"
+        disabled
+      >
+        <UserRound className="text-muted-foreground" />
+      </Button>
+    );
   }
 
   if (!user) {

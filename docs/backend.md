@@ -52,6 +52,11 @@ are validated at boot (Joi); the app refuses to start without them.
 - **Auth**: global `JwtAuthGuard` + `@Public()` for open routes;
   `RolesGuard` + `@Roles(Role.ADMIN)` for admin operations. JWT payload:
   `{ sub, email, role }`, strategy reloads the user from DB on every request.
+  On `@Public()` routes a valid token (cookie or Bearer) is still resolved
+  into `request.user` — best-effort, never blocking (since M-PAYMENTS-1:
+  otherwise a signed-in buyer's `POST /orders` would silently fall into the
+  guest path and the order would never appear in their account). A missing,
+  expired or invalid token leaves a public route anonymous.
 - **Validation**: every request body/query goes through DTOs with
   class-validator decorators. The pipe returns field-keyed errors:
   `errors: { email: ["email must be an email"] }`.
@@ -91,8 +96,11 @@ are validated at boot (Joi); the app refuses to start without them.
   Permissions are managed by SUPER_ADMIN via `/api/admin/users` (the
   «Пользователи» tab). Delivered key values in admin order views are
   SUPER_ADMIN-only (plain ADMINs with the «orders» permission see the
-  order without key values). File uploads require the «files» permission
-  (shared upload infra for blog covers and settings images).
+  order without key values), and the same policy covers the product key
+  pool: `GET/PUT /admin/products/:id/keys` is SUPER_ADMIN-only — raw
+  ProductKey values are the sellable goods. File uploads require the
+  «files» permission (shared upload infra for blog covers and settings
+  images).
 - `USER` — buyer. Gets `403` on any role- or permission-protected route.
 
 Registration always creates a `USER`. The role and permissions in a JWT
@@ -142,21 +150,37 @@ delivery**.
 - `src/payments/` — PaymentSettings singleton (testEnabled + per-provider
   { enabled, config }), `GET /payments/methods` (public, enabled only),
   admin `GET/PUT /admin/payments/settings` + `GET /admin/payments/emails`
-  (@Roles SUPER_ADMIN). The TEST emulator: session token stored on the
+  (@Roles SUPER_ADMIN). Provider boundary (M-PAYMENTS-1):
+  `payment-provider.interface.ts` (`PaymentProviderAdapter` — session
+  creation) + `PaymentProviderRegistry` — only registered adapters are
+  selectable, never a client-supplied id. The TEST emulator adapter
+  (`providers/test-payment.provider.ts`): session token stored on the
   order, `GET /payments/test/session/:token` (public — the token is the
   capability), `POST /payments/webhook/test` (public) verifies an
   HMAC-SHA256 signature over `orderId:token:status` (PAYMENTS_WEBHOOK_
   SECRET, shared with the frontend emulator route handler) and is
-  idempotent. Real acquirers are registered in
+  idempotent (the conditional AWAITING_PAYMENT → PAID/CANCELLED transition
+  is the claim). Payment lifecycle events (payment.created /
+  payment.succeeded / payment.canceled / payment.webhook_rejected) go to
+  the audit log — success/cancel ride the same DB transaction as the order
+  transition; webhook/audit actor is the system (null), never a user. In
+  production the emulator is disabled unless
+  `PAYMENTS_ALLOW_TEST_EMULATOR=true`. Real acquirers are registered in
   `common/constants/payment-providers.ts` (Т-Банк, ЮMoney, ЮKassa,
-  CloudPayments, Robokassa — config storage only, `live: false`) and
-  integrate inside `PaymentsService.createPaymentSession`.
-- Admin key management: `GET/PUT /admin/products/:id/keys` replaces the
-  UNSOLD keys (sold rows are history); `stock` decrements on payment.
-- Product stock is NOT reserved at order creation — an abandoned payment
-  session never eats stock; concurrent last-key buys are resolved by the
-  `isSold: false` guard in the assignment query (an order may pay with
-  fewer keys assigned — the UI shows what was delivered).
+  CloudPayments, Robokassa — config storage only, `live: false`); see
+  docs/payment-providers.md for research and the adapter contract
+  (`payment-provider.interface.ts` + `PaymentProviderRegistry`).
+- Frontend companion (2026-10-08): checkout and the top-up form poke
+  `/auth/me` before `POST /orders` when a session exists — the public
+  order endpoint never 401s, so without the poke an expired access token
+  would silently turn a signed-in buyer into a guest (the M-PAYMENTS-1
+  regression).
+- Admin key management (SUPER_ADMIN-only): `GET/PUT
+  /admin/products/:id/keys` replaces the UNSOLD keys (sold rows are
+  history). Stock is reserved at order creation (atomic conditional
+  decrement) and returned on the cancel webhook; abandoned checkouts
+  release their reservation lazily on the next order of the same
+  product (30-min TTL).
 
 ## Authentication — implemented vs not
 

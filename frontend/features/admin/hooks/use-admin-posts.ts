@@ -33,9 +33,11 @@ export function useAdminPostMutations() {
 
   const invalidate = () => {
     // The public /blog pages read the same rows server-side; admin list
-    // keeps its own cache.
+    // keeps its own cache (the singular key covers the edit form:
+    // ["admin-post", id]).
     void revalidateStorefrontTags(["posts"]);
     queryClient.invalidateQueries({ queryKey: ["admin-posts"] });
+    queryClient.invalidateQueries({ queryKey: ["admin-post"] });
   };
 
   const create = useMutation({

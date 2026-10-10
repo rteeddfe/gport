@@ -14,14 +14,64 @@ export type AdminPermission =
   | "posts"
   | "reviews"
   | "promo-codes"
-  | "support";
+  | "support"
+  | "integrations";
 
-export const ADMIN_PERMISSIONS: AdminPermission[] = [
-  "products",
-  "posts",
-  "reviews",
-  "promo-codes",
-];
+/** Admin integrations view (M-INTEGRATIONS-1/-2): secrets are collapsed to
+ * presence flags — the API never returns a secret value. `config` always
+ * carries every registry field (empty string = not set), including the
+ * backend-validated OAuth redirect URI. */
+export interface IntegrationView {
+  provider: string;
+  type: string;
+  title: string;
+  description: string;
+  enabled: boolean;
+  config: Record<string, string>;
+  configured: boolean;
+  secretsConfigured: Record<string, boolean>;
+  updatedAt: string | null;
+}
+
+export interface IntegrationUpdateInput {
+  enabled?: boolean;
+  config?: Record<string, string>;
+  secrets?: Record<string, string>;
+}
+
+/** Audit log row (M-AUDIT-1): server-side sanitized metadata only —
+ * no secrets/tokens/passwords ever reach this shape. */
+export interface AuditLogView {
+  id: string;
+  actorUserId: string | null;
+  actorRole: string | null;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  metadata: unknown;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: string;
+}
+
+export interface AuditLogsQueryParams {
+  page?: number;
+  limit?: number;
+  action?: string;
+  entityType?: string;
+  entityId?: string;
+  actorUserId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+}
+
+export interface PaginatedAuditLogs {
+  items: AuditLogView[];
+  total: number;
+  page: number;
+  limit: number;
+  pages: number;
+}
 
 export type ProductStatus = "DRAFT" | "PUBLISHED" | "ARCHIVED";
 
@@ -30,7 +80,18 @@ export interface Category {
   name: string;
   slug: string;
   description: string | null;
+  /** Fixed storefront section: games | subscriptions | currency. */
+  type: string;
   productsCount: number;
+}
+
+/** One value of a fixed list kind (the «Списки» registry). */
+export interface ListValue {
+  id: string;
+  /** tags | platform | genre | consoles | subscription-group | subscription-includes. */
+  kind: string;
+  name: string;
+  slug: string;
 }
 
 /** What the buyer gets: a key/gift code, fixed nominals or an amount
@@ -55,23 +116,59 @@ export interface ProductVariant {
   sortOrder: number;
 }
 
+/** One tier of PC system requirements (fixed keys — the admin form and
+ * the detail page render them with fixed Russian labels). */
+export interface SystemRequirementsRow {
+  os?: string;
+  cpu?: string;
+  gpu?: string;
+  ram?: string;
+  storage?: string;
+}
+
+/** Game system requirements: { minimum, recommended } tiers. */
+export interface SystemRequirements {
+  minimum?: SystemRequirementsRow;
+  recommended?: SystemRequirementsRow;
+}
+
 export interface Product {
   id: string;
   title: string;
   slug: string;
   description: string | null;
+  /** Activation instructions («Активация ключа» section). */
   instruction: string | null;
-  region: string | null;
+  /** Catalog platform facet: steam | playstation | xbox | nintendo. */
   platform: string | null;
   genre: string[];
-  localization: string | null;
-  ageRating: string | null;
   images: string[];
   priceCents: number;
   oldPriceCents: number | null;
+  /** Cached discount percent (0 without a valid old price). */
+  discountPercent: number;
+  /** Cashback returned to the buyer balance, percent. */
+  cashbackPercent: number;
+  releaseYear: number | null;
+  /** Editorial rating 0..5 shown on the card. */
+  rating: number | null;
+  /** Console generations («PlayStation 5», «Nintendo Switch 2»…). */
+  consoles: string[];
+  /** Merch badges: "hit" (Хит), "new" (Новинка) — picked from the
+   * category's badge options. */
+  tags: string[];
+  /** Subscription service one-liner (catalog subtitle). */
+  tagline: string | null;
+  /** Subscription group: gaming | ai | media | social. */
+  group: string | null;
+  /** «Что входит» bullets of a subscription service. */
+  features: string[];
+  /** Folk search terms matched by catalog search. */
+  searchAliases: string[];
+  /** Game system requirements: { minimum, recommended } tiers. */
+  systemRequirements: SystemRequirements | null;
   /** Available quantity (digital keys) in stock. */
   stock: number;
-  currency: string;
   status: ProductStatus;
   kind: ProductKind;
   /** TOPUP_AMOUNT only: the buyer-entered amount range (kopecks). */
@@ -284,10 +381,34 @@ export interface HomeWallCard {
   href: string;
 }
 
+/** One stat card of the home trust block (before the news). */
+export interface HomeStatCard {
+  label: string;
+  prefix: string;
+  value: string;
+  description: string;
+}
+
+/** One community card of the home trust block; brand picks the
+ * built-in icon and tile color. */
+export interface HomeCommunityCard {
+  brand: "telegram" | "vk";
+  name: string;
+  description: string;
+  usersCount: string;
+  usersLabel: string;
+  url: string;
+}
+
 /** Tokens ride as httpOnly cookies — the body only carries the profile. */
 export interface AuthResponse {
   user: AuthUser;
 }
+
+/** Registering an email that holds a guest-checkout account parks on a
+ * mailed code: the response carries no user and no session — the claim
+ * completes via /auth/register/verify. */
+export type RegisterResponse = AuthResponse | { verificationRequired: true };
 
 /** User row as the SUPER_ADMIN user management returns it (GET
  * /admin/users, PATCH /admin/users/:id) — no password hash. */
@@ -342,12 +463,42 @@ export interface SocialLink {
 
 /** Singleton row from GET /settings — everything is public; only writes
  * are admin-gated. */
+/** One header-menu entry of the site settings constructor: a preset icon
+ * name (see HEADER_ICONS in lib/header-icons), text and a link. */
+export interface HeaderMenuItem {
+  icon: string;
+  label: string;
+  href: string;
+}
+
+/** One footer menu: column title + its text links. */
+export interface FooterMenu {
+  title: string;
+  items: { label: string; href: string }[];
+}
+
 export interface SiteSettings {
   id: number;
   siteName: string;
+  /** Short line under/beside the logo («магазин цифровых товаров»). */
+  descriptor: string;
+  /** Footer brand paragraph (longer text under the logo column). */
+  descriptorFooter: string;
   supportEmail: string;
+  /** Legal entity requisites: footer block, documents, payment-provider
+   * moderation. Empty = the block is not rendered. */
+  legalName: string;
+  legalInn: string;
+  legalOgrn: string;
+  legalAddress: string;
+  legalPhone: string;
+  /** Empty = no logo rendered anywhere (filled from the admin). */
   logoUrl: string;
   socials: SocialLink[];
+  /** Header menu constructor items; empty = no nav rendered. */
+  headerMenu: HeaderMenuItem[];
+  /** Footer menu columns; empty = no menu columns rendered. */
+  footerMenus: FooterMenu[];
   seoTitle: string;
   seoDescription: string;
   ogImageUrl: string | null;
@@ -374,6 +525,10 @@ export interface HomeContent {
   title: string;
   titleAccent: string;
   subtitle: string;
+  /** Primary CTA (filled style, wallet icon); empty = button hidden. */
+  ctaPrimaryLabel: string;
+  ctaPrimaryHref: string;
+  /** Secondary CTA (outline style); empty = button hidden. */
   ctaLabel: string;
   ctaHref: string;
   tiles: string[];
@@ -388,6 +543,12 @@ export interface HomeContent {
   /** Services of the home service WALL (block 3); empty = built-in
    * service tiles. */
   serviceCards: HomeServiceCard[];
+  /** Trust block stat cards; empty = the stat cards do not render. */
+  statCards: HomeStatCard[];
+  /** Trust block social badge heading; empty = the community card hides. */
+  communityLabel: string;
+  /** Community cards (Telegram / VK); empty = the block hides. */
+  communityCards: HomeCommunityCard[];
   updatedAt: string;
 }
 
@@ -465,4 +626,25 @@ export interface UploadedFileInfo {
   mimeType: string;
   size: number;
   url: string;
+}
+
+/** «Состояние» → «Трафик и баны» (SUPER_ADMIN): счётчики инстанса,
+ * активные баны и пороги авто-бана. */
+export interface TrafficSnapshotView {
+  rpsLastMinute: number;
+  topIps: { ip: string; requests: number }[];
+  activeBans: {
+    id: string;
+    ip: string;
+    reason: string | null;
+    expiresAt: string | null;
+    createdBy: string;
+    createdAt: string;
+  }[];
+  settings: {
+    autoBanEnabled: boolean;
+    banThresholdRequests: number;
+    banWindowSeconds: number;
+    banDurationMinutes: number;
+  };
 }

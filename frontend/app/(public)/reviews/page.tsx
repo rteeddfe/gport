@@ -41,7 +41,7 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Sear
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-neon">Отзывы</p>
           <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">
-            Что говорят <span className="text-gradient">игроки</span>
+            Что говорят <span className="text-gradient">покупатели</span>
           </h1>
           <p className="text-muted-foreground mt-2 max-w-2xl text-sm leading-relaxed">
             Опубликованные отзывы покупателей — каждый проходит проверку

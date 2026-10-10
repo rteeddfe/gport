@@ -6,6 +6,8 @@ import { notFound } from "next/navigation";
 import { Container } from "@/components/layout/container";
 import { PostCard } from "@/features/blog/components/post-card";
 import { formatDateLong } from "@/lib/format";
+import { richContentClass } from "@/lib/rich-content";
+import { getFallbackLogo } from "@/services/settings.service";
 import { getPost, getPosts } from "@/services/posts.service";
 import type { Post } from "@/types/api";
 
@@ -33,6 +35,7 @@ export default async function PostPage({ params }: { params: Params }) {
   const { slug } = await params;
   const post = await getPost(slug).catch(() => null);
   if (!post) notFound();
+  const logoUrl = await getFallbackLogo();
 
   let more: Post[] = [];
   try {
@@ -79,13 +82,16 @@ export default async function PostPage({ params }: { params: Params }) {
                 aria-hidden
                 className="absolute inset-0 grid place-items-center bg-[radial-gradient(16rem_12rem_at_50%_20%,rgb(139_92_246/0.25),transparent_70%),radial-gradient(12rem_10rem_at_80%_90%,rgb(85_221_229/0.15),transparent_70%)]"
               >
-                <Image
-                  src="/logo2.png"
-                  alt=""
-                  width={2400}
-                  height={1569}
-                  className="relative h-20 w-auto opacity-90"
-                />
+                {logoUrl ? (
+                  <Image
+                    src={logoUrl}
+                    alt=""
+                    width={2400}
+                    height={1569}
+                    unoptimized={logoUrl.toLowerCase().endsWith(".svg")}
+                    className="relative h-20 w-auto object-contain opacity-90"
+                  />
+                ) : null}
               </div>
             )}
             {/* Gradient overlay: contrast for the title block at the bottom
@@ -114,9 +120,12 @@ export default async function PostPage({ params }: { params: Params }) {
       <Container className="py-12">
         <div className="mx-auto max-w-3xl">
           {post.content ? (
-            <p className="whitespace-pre-line text-[15px] leading-relaxed text-foreground/90">
-              {post.content}
-            </p>
+            /* Sanitized server-side against a whitelist (same gate as
+               the legal docs) — safe to render as HTML. */
+            <div
+              className={`text-foreground/90 text-[15px] leading-relaxed [&_h2]:text-foreground [&_h3]:text-foreground ${richContentClass}`}
+              dangerouslySetInnerHTML={{ __html: post.content }}
+            />
           ) : (
             <p className="text-muted-foreground text-sm italic">
               Текст новости скоро появится.
@@ -136,7 +145,7 @@ export default async function PostPage({ params }: { params: Params }) {
             <h2 className="text-lg font-semibold">Другие новости</h2>
             <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
               {more.map((item) => (
-                <PostCard key={item.id} post={item} />
+                <PostCard key={item.id} post={item} logoUrl={logoUrl} />
               ))}
             </div>
           </section>

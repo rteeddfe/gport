@@ -5,6 +5,7 @@ import {
   IsArray,
   IsEnum,
   IsInt,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -71,11 +72,7 @@ export class CreateProductDto {
   @MaxLength(5000)
   instruction?: string;
 
-  @IsOptional()
-  @IsString()
-  @MaxLength(100)
-  region?: string;
-
+  /** Catalog platform facet: steam | playstation | xbox | nintendo. */
   @IsOptional()
   @IsString()
   @MaxLength(100)
@@ -87,16 +84,6 @@ export class CreateProductDto {
   @IsString({ each: true })
   @MaxLength(50, { each: true })
   genre?: string[];
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(100)
-  localization?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(10)
-  ageRating?: string;
 
   @IsOptional()
   @IsArray()
@@ -115,15 +102,82 @@ export class CreateProductDto {
   @Min(0)
   oldPriceCents?: number | null;
 
+  /** Cashback returned to the buyer balance, percent 0..99. */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(99)
+  cashbackPercent?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1990)
+  @Max(2100)
+  releaseYear?: number | null;
+
+  /** Editorial rating 0..5 shown on the card. */
+  @IsOptional()
+  @Type(() => Number)
+  @Min(0)
+  @Max(5)
+  rating?: number | null;
+
+  /** Console generations («PlayStation 5», «Nintendo Switch 2»…). */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @IsString({ each: true })
+  @MaxLength(50, { each: true })
+  consoles?: string[];
+
+  /** Merch badges: "hit", "new" — picked from the category's badges. */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @IsString({ each: true })
+  @MaxLength(20, { each: true })
+  tags?: string[];
+
+  /** Subscription service one-liner (catalog subtitle). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  tagline?: string | null;
+
+  /** Subscription group: gaming | ai | media | social. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  group?: string | null;
+
+  /** «Что входит» bullets of a subscription service. */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(12)
+  @IsString({ each: true })
+  @MaxLength(200, { each: true })
+  features?: string[];
+
+  /** Folk search terms («пс плюс», «гпт») matched by catalog search. */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(15)
+  @IsString({ each: true })
+  @MaxLength(50, { each: true })
+  searchAliases?: string[];
+
+  /** Game system requirements, fixed shape:
+   * { minimum?, recommended?: { os, cpu, gpu, ram, storage } }. */
+  @IsOptional()
+  @IsObject()
+  systemRequirements?: Record<string, unknown> | null;
+
   /** Available quantity (digital keys) in stock. */
   @IsInt()
   @Min(0)
   stock: number;
 
-  @IsOptional()
-  @IsString()
-  @MaxLength(3)
-  currency?: string;
 
   @IsOptional()
   @IsEnum(ProductStatus)

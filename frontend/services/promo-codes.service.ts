@@ -49,3 +49,15 @@ export function adminUpdatePromoCode(
 export function adminDeletePromoCode(id: string): Promise<void> {
   return apiFetch<void>(`/admin/promo-codes/${id}`, { method: "DELETE" });
 }
+
+/** Public checkout preview: does the code work against this subtotal?
+ * Invalid codes throw with the buyer-facing message. */
+export function previewPromoCode(
+  code: string,
+  subtotalCents: number,
+): Promise<{ discountCents: number; totalCents: number }> {
+  const query = new URLSearchParams({ code, subtotalCents: String(subtotalCents) });
+  return apiFetch<{ discountCents: number; totalCents: number }>(
+    `/promo-codes/preview${buildQuery({ code, subtotalCents })}`,
+  );
+}

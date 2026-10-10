@@ -10,6 +10,27 @@ export interface AppConfiguration {
   /** HMAC secret of the test-acquiring webhook (the emulator and the API
    * must share it). PAYMENTS_WEBHOOK_SECRET in production. */
   paymentsWebhookSecret: string;
+  /** Explicit production opt-in for the TEST payment emulator. In
+   * production the emulator stays disabled unless this is true. */
+  paymentsAllowTestEmulator: boolean;
+  /** Per-provider OAuth configuration (M-OAUTH); clientId '' = disabled. */
+  oauth: Record<'yandex' | 'vk', OAuthProviderConfiguration>;
+  /** Integration secrets master key (M-INTEGRATIONS): hex of a 32-byte
+   * AES-256-GCM key. '' = secrets vault locked (encryption refused; in
+   * production the app refuses to start). */
+  integrations: { encryptionKey: string };
+}
+
+export interface OAuthProviderConfiguration {
+  clientId: string;
+  clientSecret: string;
+  /** Full callback URL registered with the provider — NEVER taken from
+   * a request. Exact-match allowlist entry. */
+  redirectUri: string;
+  /** Provider authorize endpoint (fixed, official). */
+  authorizeEndpoint: string;
+  /** Space-separated scope list requested at authorize time. */
+  scope: string;
 }
 
 /**
@@ -56,4 +77,28 @@ export default (): AppConfiguration => ({
   cookieSameSite: parseCookieSameSite(process.env.COOKIE_SAME_SITE),
   paymentsWebhookSecret:
     process.env.PAYMENTS_WEBHOOK_SECRET ?? 'dev-test-acquiring-secret',
+  paymentsAllowTestEmulator: process.env.PAYMENTS_ALLOW_TEST_EMULATOR === 'true',
+  oauth: {
+    // Endpoints per the official docs (Yandex: code-url.md; VK:
+    // auth-without-sdk-web). Scopes: Yandex — permission groups
+    // (id/login always returned, email needs login:email); VK — the
+    // default vkid.personal_info rides along, email must be asked.
+    yandex: {
+      clientId: process.env.YANDEX_CLIENT_ID ?? '',
+      clientSecret: process.env.YANDEX_CLIENT_SECRET ?? '',
+      redirectUri: process.env.YANDEX_REDIRECT_URI ?? '',
+      authorizeEndpoint: 'https://oauth.yandex.ru/authorize',
+      scope: 'login:info login:email',
+    },
+    vk: {
+      clientId: process.env.VK_CLIENT_ID ?? '',
+      clientSecret: process.env.VK_CLIENT_SECRET ?? '',
+      redirectUri: process.env.VK_REDIRECT_URI ?? '',
+      authorizeEndpoint: 'https://id.vk.ru/authorize',
+      scope: 'email',
+    },
+  },
+  integrations: {
+    encryptionKey: process.env.INTEGRATIONS_ENCRYPTION_KEY ?? '',
+  },
 });

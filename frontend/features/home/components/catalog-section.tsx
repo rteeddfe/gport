@@ -16,11 +16,14 @@ export async function CatalogSection({
   kicker,
   title,
   moreHref,
+  logoUrl = "",
 }: {
   categorySlug: string;
   kicker: string;
   title: React.ReactNode;
   moreHref: string;
+  /** Settings logo for the no-cover card fallback. */
+  logoUrl?: string;
 }) {
   let items: Awaited<ReturnType<typeof getProducts>>["items"] = [];
   try {
@@ -41,6 +44,7 @@ export async function CatalogSection({
           kicker={kicker}
           title={title}
           moreHref={moreHref}
+          logoUrl={logoUrl}
         />
       </Container>
     </section>

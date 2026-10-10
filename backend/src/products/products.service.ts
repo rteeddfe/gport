@@ -1,5 +1,11 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  OrderStatus,
   Prisma,
   ProductFaq,
   ProductKind,
@@ -36,6 +42,22 @@ const DEFAULT_LIMIT = 10;
 
 const PRODUCT_INCLUDE = { category: true, variants: { orderBy: { sortOrder: 'asc' as const } } };
 
+/** Cached discount percent for the «По скидке» sort: recomputed whenever
+ * priceCents/oldPriceCents are written. 0 without a valid old price. */
+function discountPercentOf(
+  priceCents: number,
+  oldPriceCents: number | null | undefined,
+): number {
+  if (!oldPriceCents || oldPriceCents <= priceCents) return 0;
+  return Math.round(((oldPriceCents - priceCents) / oldPriceCents) * 100);
+}
+
+/** Prisma Json input: undefined = leave untouched, null = DB NULL. */
+function jsonInput(value: Record<string, unknown> | null | undefined) {
+  if (value === undefined) return undefined;
+  return value === null ? Prisma.DbNull : (value as Prisma.InputJsonValue);
+}
+
 function orderByFor(
   sort: ProductSort | undefined,
 ): Prisma.ProductOrderByWithRelationInput[] {
@@ -44,6 +66,12 @@ function orderByFor(
       return [{ priceCents: 'asc' }, { createdAt: 'desc' }];
     case ProductSort.PRICE_DESC:
       return [{ priceCents: 'desc' }, { createdAt: 'desc' }];
+    case ProductSort.DISCOUNT:
+      return [{ discountPercent: 'desc' }, { createdAt: 'desc' }];
+    // «Популярные» is the catalog default; until a real popularity signal
+    // exists it matches the recency order.
+    case ProductSort.POPULAR:
+    case ProductSort.NEW:
     default:
       return [{ createdAt: 'desc' }];
   }
@@ -80,8 +108,12 @@ export class ProductsService {
     const related = await this.prisma.product.findMany({
       where: {
         status: ProductStatus.PUBLISHED,
-        categoryId: product.categoryId,
         id: { not: product.id },
+        // «Похожие игры»: same primary genre, falling back to the section
+        // for products without genres (top-ups, subscriptions).
+        ...(product.genre.length > 0
+          ? { genre: { has: product.genre[0] } }
+          : { categoryId: product.categoryId }),
       },
       include: PRODUCT_INCLUDE,
       orderBy: { createdAt: 'desc' },
@@ -118,16 +150,23 @@ export class ProductsService {
         slug: rest.slug ?? slugify(rest.title),
         description: rest.description ?? null,
         instruction: rest.instruction ?? null,
-        region: rest.region ?? null,
         platform: rest.platform ?? null,
         genre: rest.genre ?? [],
-        localization: rest.localization ?? null,
-        ageRating: rest.ageRating ?? null,
         images: rest.images ?? [],
         priceCents: rest.priceCents,
         oldPriceCents: rest.oldPriceCents ?? null,
+        discountPercent: discountPercentOf(rest.priceCents, rest.oldPriceCents),
+        cashbackPercent: rest.cashbackPercent ?? 0,
+        releaseYear: rest.releaseYear ?? null,
+        rating: rest.rating ?? null,
+        consoles: rest.consoles ?? [],
+        tags: rest.tags ?? [],
+        tagline: rest.tagline ?? null,
+        group: rest.group ?? null,
+        features: rest.features ?? [],
+        searchAliases: rest.searchAliases ?? [],
+        systemRequirements: jsonInput(rest.systemRequirements),
         stock: rest.stock,
-        currency: rest.currency ?? 'RUB',
         status: rest.status ?? 'DRAFT',
         kind: rest.kind ?? 'GAME_KEY',
         minValue: rest.minValue ?? null,
@@ -178,16 +217,31 @@ export class ProductsService {
         slug: rest.slug,
         description: rest.description,
         instruction: rest.instruction,
-        region: rest.region,
         platform: rest.platform,
         genre: rest.genre,
-        localization: rest.localization,
-        ageRating: rest.ageRating,
         images: rest.images,
         priceCents: rest.priceCents,
         oldPriceCents: rest.oldPriceCents,
+        discountPercent:
+          rest.priceCents !== undefined || rest.oldPriceCents !== undefined
+            ? discountPercentOf(
+                rest.priceCents ?? current.priceCents,
+                rest.oldPriceCents !== undefined
+                  ? rest.oldPriceCents
+                  : current.oldPriceCents,
+              )
+            : undefined,
+        cashbackPercent: rest.cashbackPercent,
+        releaseYear: rest.releaseYear,
+        rating: rest.rating,
+        consoles: rest.consoles,
+        tags: rest.tags,
+        tagline: rest.tagline,
+        group: rest.group,
+        features: rest.features,
+        searchAliases: rest.searchAliases,
+        systemRequirements: jsonInput(rest.systemRequirements),
         stock: rest.stock,
-        currency: rest.currency,
         status: rest.status,
         kind: rest.kind,
         minValue: rest.minValue,
@@ -235,12 +289,16 @@ export class ProductsService {
             OR: [
               { title: { contains: query.search, mode: 'insensitive' } },
               { description: { contains: query.search, mode: 'insensitive' } },
+              // Folk search terms («пс плюс», «гпт») — exact alias hit;
+              // title/description stays the fuzzy path.
+              { searchAliases: { has: query.search } },
             ],
           }
         : {}),
-      ...(query.region ? { region: query.region } : {}),
-      ...(query.platform ? { platform: query.platform } : {}),
-      ...(query.genre ? { genre: { has: query.genre } } : {}),
+      // Sidebar multi-selects: comma-separated registry slugs.
+      ...(query.platform ? { platform: { in: query.platform.split(',') } } : {}),
+      ...(query.genre ? { genre: { hasSome: query.genre.split(',') } } : {}),
+      ...(query.sale ? { oldPriceCents: { not: null } } : {}),
       ...(query.priceMin !== undefined || query.priceMax !== undefined
         ? {
             priceCents: {
@@ -336,7 +394,14 @@ export class ProductsService {
   }
 
   /** Replaces the UNSOLD keys with the pasted list (sold keys are history
-   * and stay). Deduplicates; sold values that reappear are ignored. */
+   * and stay). Deduplicates; sold values that reappear are ignored.
+   * Refuses to run while AWAITING_PAYMENT orders of this product still
+   * hold their stock reservation: those orders have no key of their own
+   * yet (the claim happens at payment), so deleting the pool could leave
+   * a paid order undeliverable. The whole check+delete+create runs in one
+   * transaction — a rejection rolls back nothing because nothing was
+   * written, and the post-write re-check makes an order created in
+   * between abort the whole replacement (rollback restores the keys). */
   async replaceKeys(id: string, values: string[]): Promise<void> {
     await this.ensureExists(id);
     const seen = new Set<string>();
@@ -347,14 +412,36 @@ export class ProductsService {
       seen.add(clean);
       fresh.push(clean);
     }
-    await this.prisma.$transaction([
-      this.prisma.productKey.deleteMany({
+    const activeOrderFilter = {
+      items: {
+        some: {
+          productId: id,
+          product: { creditingMode: 'AUTO_CODE' as const },
+        },
+      },
+    };
+    await this.prisma.$transaction(async (tx) => {
+      const assertNoAwaitingOrders = async (): Promise<void> => {
+        const active = await tx.order.count({
+          where: { status: OrderStatus.AWAITING_PAYMENT, ...activeOrderFilter },
+        });
+        if (active > 0) {
+          throw new ConflictException(
+            'Нельзя заменить ключи: есть активные заказы, ожидающие оплаты',
+          );
+        }
+      };
+      await assertNoAwaitingOrders();
+      await tx.productKey.deleteMany({
         where: { productId: id, isSold: false },
-      }),
-      this.prisma.productKey.createMany({
+      });
+      await tx.productKey.createMany({
         data: fresh.map((value) => ({ productId: id, value })),
-      }),
-    ]);
+      });
+      // Re-check after the writes: a checkout committed in between aborts
+      // the transaction, so the old keys are restored, never half-swapped.
+      await assertNoAwaitingOrders();
+    });
   }
 
   /** Per-product FAQ (admin): full replace on save, display order =

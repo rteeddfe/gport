@@ -198,14 +198,25 @@ login (Telegram / Yandex / VK). When OAuth arrives, every login method must
 link to **one** user account. The implementation is intentionally undesigned
 for now.
 
+## Implemented since 2026-10-05 (checkout & payments)
+
+Orders are implemented: `POST /orders` (public — guests buy with an email,
+signed-in buyers get the order attached to their session; see
+docs/backend.md for the guest/holder-account model), `GET /orders/my`,
+admin orders, the `test` acquiring emulator with its signed webhook
+(`POST /payments/webhook/test`, HMAC over `orderId:token:status`), payment
+settings (`/admin/payments/settings`) and the audit trail for payment
+lifecycle events (docs/audit-log.md, docs/payment-providers.md).
+
 ## Not implemented yet (by design)
 
-Orders, payments/acquiring and the webhook, top-up services (Steam etc.),
-fulfillment/key delivery, admin user management, orders analytics. Site
+Real acquiring providers (Т-Банк EACQ, ЮKassa, CloudPayments, Robokassa,
+ЮMoney — registry entries and settings storage only; see
+docs/payment-providers.md for research and the compatibility matrix),
+refunds, recurring payments. Site
 content IS implemented (settings/policies/faq/home-content/files above —
 2026-10-04); what it does not cover: per-entity image galleries for
-products, orders-linked content. None of the unimplemented items have an
-approved domain model or API — each will be designed through
+products, orders-linked content. Unimplemented items are designed through
 the pipeline (business requirements → purchase flow → domain model → database
 model → API → implementation) before any code is written. The business
 processes are tracked in [docs/business/](business/README.md).

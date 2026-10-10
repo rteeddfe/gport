@@ -1,5 +1,6 @@
 "use client";
 
+import { getErrorMessage } from "@/lib/api/errors";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2, Plus, Save, Trash2 } from "lucide-react";
 import { useState } from "react";
@@ -9,6 +10,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -19,6 +27,7 @@ import {
   categorySchema,
   type CategoryFormValues,
 } from "@/schemas/category.schema";
+import { SECTIONS } from "@/lib/sections";
 import type { Category } from "@/types/api";
 
 function productsLabel(count: number): string {
@@ -29,10 +38,6 @@ function productsLabel(count: number): string {
     return `${count} товара`;
   }
   return `${count} товаров`;
-}
-
-function errorText(cause: unknown): string {
-  return cause instanceof Error ? cause.message : "Ошибка";
 }
 
 /** One editable category card: PATCH on save, DELETE with a confirm step
@@ -49,6 +54,9 @@ function CategoryCard({ category }: { category: Category }) {
       name: category.name,
       slug: category.slug,
       description: category.description ?? "",
+      type: SECTIONS.some((section) => section.value === category.type)
+        ? (category.type as CategoryFormValues["type"])
+        : undefined,
     },
   });
 
@@ -61,11 +69,12 @@ function CategoryCard({ category }: { category: Category }) {
           name: values.name,
           ...(values.slug ? { slug: values.slug } : {}),
           ...(values.description ? { description: values.description } : {}),
+          type: values.type,
         },
       });
       setSavedAt(new Date().toLocaleTimeString("ru-RU"));
     } catch (cause) {
-      setError(errorText(cause));
+      setError(getErrorMessage(cause));
     }
   }
 
@@ -78,7 +87,7 @@ function CategoryCard({ category }: { category: Category }) {
     try {
       await remove.mutateAsync(category.id);
     } catch (cause) {
-      setError(errorText(cause));
+      setError(getErrorMessage(cause));
       setConfirmDelete(false);
     }
   }
@@ -124,6 +133,36 @@ function CategoryCard({ category }: { category: Category }) {
           {...form.register("description")}
         />
       </div>
+      <div className="grid gap-3 lg:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label>Раздел</Label>
+          <Select
+            value={form.watch("type") ?? ""}
+            onValueChange={(value) =>
+              form.setValue("type", value as CategoryFormValues["type"])
+            }
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Выберите раздел" />
+            </SelectTrigger>
+            <SelectContent>
+              {SECTIONS.map((section) => (
+                <SelectItem key={section.value} value={section.value}>
+                  {section.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {form.formState.errors.type ? (
+            <p className="text-destructive text-xs">
+              {form.formState.errors.type.message}
+            </p>
+          ) : null}
+          <p className="text-muted-foreground text-xs">
+            Разделы заданы системой: Игры, Подписки, Валюта и пополнение.
+          </p>
+        </div>
+      </div>
       <div className="flex flex-wrap items-center gap-3">
         <Button type="submit" size="sm" variant="outline" className="gap-1.5">
           {update.isPending ? (
@@ -162,7 +201,7 @@ function NewCategoryCard() {
   const [error, setError] = useState<string | null>(null);
   const form = useForm<CategoryFormValues>({
     resolver: zodResolver(categorySchema),
-    defaultValues: { name: "", slug: "", description: "" },
+    defaultValues: { name: "", slug: "", description: "", type: undefined },
   });
 
   async function onSubmit(values: CategoryFormValues) {
@@ -172,10 +211,11 @@ function NewCategoryCard() {
         name: values.name,
         ...(values.slug ? { slug: values.slug } : {}),
         ...(values.description ? { description: values.description } : {}),
+        type: values.type,
       });
       form.reset();
     } catch (cause) {
-      setError(errorText(cause));
+      setError(getErrorMessage(cause));
     }
   }
 
@@ -232,6 +272,36 @@ function NewCategoryCard() {
           placeholder="Появится в описании раздела каталога"
           {...form.register("description")}
         />
+      </div>
+      <div className="grid gap-3 lg:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label>Раздел</Label>
+          <Select
+            value={form.watch("type") ?? ""}
+            onValueChange={(value) =>
+              form.setValue("type", value as CategoryFormValues["type"])
+            }
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Выберите раздел" />
+            </SelectTrigger>
+            <SelectContent>
+              {SECTIONS.map((section) => (
+                <SelectItem key={section.value} value={section.value}>
+                  {section.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {form.formState.errors.type ? (
+            <p className="text-destructive text-xs">
+              {form.formState.errors.type.message}
+            </p>
+          ) : null}
+          <p className="text-muted-foreground text-xs">
+            Разделы заданы системой: Игры, Подписки, Валюта и пополнение.
+          </p>
+        </div>
       </div>
       <p className="text-muted-foreground text-xs">
         Без slug он сгенерируется из названия автоматически. Категорию с

@@ -29,4 +29,23 @@ export const envValidationSchema = Joi.object({
     // `then` is a Joi condition option, not a thenable.
     // oxlint-disable-next-line unicorn/no-thenable
     .when('NODE_ENV', { is: 'production', then: Joi.required() }),
+  /** Explicit production opt-in for the TEST payment emulator
+   * (M-PAYMENTS-1 §8). Without it, production refuses the emulator even
+   * if the admin toggle is on. */
+  PAYMENTS_ALLOW_TEST_EMULATOR: Joi.string().valid('true', 'false').default('false'),
+  /** OAuth providers (M-OAUTH). Empty client id = the provider is
+   * disabled: the start endpoint answers 400. Secrets stay backend-only. */
+  YANDEX_CLIENT_ID: Joi.string().allow('').default(''),
+  YANDEX_CLIENT_SECRET: Joi.string().allow('').default(''),
+  YANDEX_REDIRECT_URI: Joi.string().uri().allow('').default(''),
+  VK_CLIENT_ID: Joi.string().allow('').default(''),
+  VK_CLIENT_SECRET: Joi.string().allow('').default(''),
+  VK_REDIRECT_URI: Joi.string().uri().allow('').default(''),
+  /** Master key of the integration secrets vault (M-INTEGRATIONS): hex
+   * of exactly 32 bytes (AES-256-GCM). Empty = vault locked: secrets
+   * cannot be stored; in production the app refuses to start. */
+  INTEGRATIONS_ENCRYPTION_KEY: Joi.string()
+    .pattern(/^[0-9a-fA-F]{64}$/)
+    .allow('')
+    .default(''),
 });

@@ -17,11 +17,9 @@ import { MotionConfig, motion, useReducedMotion, type Variants } from "framer-mo
 import { Container } from "@/components/layout/container";
 import { formatPrice } from "@/lib/format";
 import type { HomeServiceCard, HomeWallCard } from "@/types/api";
-import { SERVICES, type Service } from "../services-data";
+
 
 /** CTA tile sits in the middle of the wall, majestic-style. */
-const WALL: (Service | "cta")[] = [...SERVICES.slice(0, 3), "cta", ...SERVICES.slice(3)];
-
 const CTA_GRADIENT =
   "radial-gradient(120% 70% at 50% 0%, rgb(255 255 255 / 0.16), transparent 55%), " +
   "linear-gradient(180deg, #8b5cf6 0%, #7762f2 55%, #55dde5 150%)";
@@ -52,42 +50,6 @@ const tileVariants: Variants = {
 /** Exit stagger + duration ≈ 0.46s; navigate once the last tile is gone. */
 const EXIT_NAVIGATE_MS = 480;
 
-function MosaicTile({ service, index }: { service: Service; index: number }) {
-  return (
-    <motion.div variants={tileVariants} className="aspect-[3/4] lg:aspect-auto">
-      <Link
-        href="/topup"
-        style={{ "--tile-glow": service.glow, "--tile-index": String(index) } as CSSProperties}
-        className="service-tile relative block h-full w-full overflow-hidden rounded-2xl"
-      >
-        <span
-          className="tile-art absolute inset-0 flex items-center justify-center"
-          style={{ background: service.background }}
-        >
-          {service.icon ? (
-            <Image
-              src={service.icon}
-              alt=""
-              width={56}
-              height={56}
-              unoptimized
-              className="tile-logo size-14"
-            />
-          ) : (
-            <span className="tile-logo">{service.iconNode}</span>
-          )}
-        </span>
-        <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/30 to-transparent px-3 pt-8 pb-2.5">
-          <span className="block text-xs font-semibold text-white">{service.name}</span>
-          <span className="mt-0.5 block text-[11px] text-white/65">
-            от {service.priceFrom.toLocaleString("ru-RU")} ₽
-          </span>
-        </span>
-      </Link>
-    </motion.div>
-  );
-}
-
 function MosaicCardTile({ card, index }: { card: HomeWallCard; index: number }) {
   return (
     <motion.div variants={tileVariants} className="aspect-[3/4] lg:aspect-auto">
@@ -111,8 +73,9 @@ function MosaicCardTile({ card, index }: { card: HomeWallCard; index: number }) 
   );
 }
 
-/** Admin-picked top-up service tile: mini logo (or the product cover),
- * name and the «от N ₽» line — links to the dedicated top-up page. */
+/** Admin-picked top-up service tile: the cover art fills the whole tile,
+ * the name and the «от N ₽» line sit over the bottom scrim — links to
+ * the dedicated top-up page. */
 function MosaicServiceTile({
   service,
   index,
@@ -128,22 +91,22 @@ function MosaicServiceTile({
         style={{ "--tile-glow": "rgb(139 92 246 / 0.45)", "--tile-index": String(index) } as CSSProperties}
         className="service-tile relative block h-full w-full overflow-hidden rounded-2xl"
       >
-        <span className="tile-art absolute inset-0 flex items-center justify-center">
-          {art ? (
-            // Admin uploads may be SVG (/files/:id) — plain img, same
-            // language as the built-in service marks.
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={art}
-              alt=""
-              className="tile-logo size-14 object-contain"
-            />
-          ) : (
+        {art ? (
+          // Admin uploads may be SVG (/files/:id) — plain img, same
+          // language as the built-in service marks.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={art}
+            alt=""
+            className="tile-art absolute inset-0 h-full w-full object-cover"
+          />
+        ) : (
+          <span className="tile-art absolute inset-0 flex items-center justify-center">
             <span className="tile-logo grid size-14 place-items-center text-2xl font-bold text-white">
               {service.title.slice(0, 1)}
             </span>
-          )}
-        </span>
+          </span>
+        )}
         <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/30 to-transparent px-3 pt-8 pb-2.5">
           <span className="block truncate text-xs font-semibold text-white">
             {service.title}
@@ -226,12 +189,12 @@ export function HeroServices({
   const [leaving, setLeaving] = useState(false);
   const navigateTimer = useRef<number | null>(null);
 
-  // Priority: admin-picked top-up services → legacy image cards → the
-  // built-in service tiles. The CTA tile stays in the middle either way.
+  // Priority: admin-picked top-up services → legacy image cards. The CTA
+  // tile stays in the middle either way; nothing configured → no wall.
   const hasServices = !!serviceCards && serviceCards.length > 0;
   const hasCards = !hasServices && !!cards && cards.length > 0;
   const mid = (count: number) => Math.ceil(count / 2);
-  const wallItems: (Service | HomeWallCard | HomeServiceCard | "cta")[] = hasServices
+  const wallItems: (HomeWallCard | HomeServiceCard | "cta")[] = hasServices
     ? [
         ...serviceCards.slice(0, mid(serviceCards.length)),
         "cta",
@@ -239,7 +202,7 @@ export function HeroServices({
       ]
     : hasCards
       ? [...cards.slice(0, mid(cards.length)), "cta", ...cards.slice(mid(cards.length))]
-      : WALL;
+      : [];
 
   useEffect(
     () => () => {
@@ -257,6 +220,11 @@ export function HeroServices({
     setLeaving(true);
     navigateTimer.current = window.setTimeout(() => router.push("/topup"), EXIT_NAVIGATE_MS);
   }, [leaving, reduceMotion, router]);
+
+  // Nothing configured by the admin — the wall does not render (the old
+  // built-in PS/Battle.net/Nintendo tiles are gone with the hardcoded
+  // content).
+  if (!hasServices && !hasCards) return null;
 
   return (
     <MotionConfig reducedMotion="user">
@@ -302,10 +270,8 @@ export function HeroServices({
                 <MosaicCta key="cta" index={index} onActivate={goToTopup} />
               ) : "imageUrl" in item ? (
                 <MosaicCardTile key={`${item.imageUrl}-${index}`} card={item} index={index} />
-              ) : "productId" in item ? (
-                <MosaicServiceTile key={item.productId} service={item} index={index} />
               ) : (
-                <MosaicTile key={item.name} service={item} index={index} />
+                <MosaicServiceTile key={item.productId} service={item} index={index} />
               ),
             )}
           </motion.div>

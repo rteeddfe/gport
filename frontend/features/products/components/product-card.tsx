@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { cn } from "cn";
 import { formatPrice } from "@/lib/format";
+import { productTagLabel } from "@/lib/product-tags";
 import type { Product } from "@/types/api";
 
 function discountPercent(product: Product): number | null {
@@ -14,17 +15,20 @@ function discountPercent(product: Product): number | null {
 
 /**
  * Shared product poster card (home «Игровые валюты», catalog,
- * promotions): portrait cover with the store logo on a neon wash as the
- * fallback (no letter), title, price and — when the product has one — a
- * struck-through old price and a violet discount badge. Whole card links
+ * promotions): portrait cover with the settings logo on a neon wash as
+ * the fallback (no letter), title, price and — when the product has one —
+ * a struck-through old price and a violet discount badge. Whole card links
  * to the product page; hover = lift + brand glow (CSS only).
  */
 export function ProductCard({
   product,
   sizes = "(min-width: 1024px) 16vw, (min-width: 640px) 33vw, 50vw",
+  logoUrl = "",
 }: {
   product: Product;
   sizes?: string;
+  /** Settings logo shown on the no-cover fallback tile. */
+  logoUrl?: string;
 }) {
   const cover = product.images[0];
   const discount = discountPercent(product);
@@ -48,19 +52,34 @@ export function ProductCard({
             aria-hidden
             className="absolute inset-0 grid place-items-center bg-[radial-gradient(16rem_12rem_at_50%_20%,rgb(139_92_246/0.25),transparent_70%),radial-gradient(12rem_10rem_at_80%_90%,rgb(85_221_229/0.15),transparent_70%)]"
           >
-            <Image
-              src="/logo2.png"
-              alt=""
-              width={2400}
-              height={1569}
-              className="relative h-14 w-auto opacity-90"
-            />
+            {logoUrl ? (
+              <Image
+                src={logoUrl}
+                alt=""
+                width={2400}
+                height={1569}
+                unoptimized={logoUrl.toLowerCase().endsWith(".svg")}
+                className="relative h-14 w-auto object-contain opacity-90"
+              />
+            ) : null}
           </div>
         )}
         {discount !== null ? (
           <span className="absolute left-3 top-3 rounded-full bg-brand px-2.5 py-1 text-xs font-bold text-white glow-brand">
             −{discount}%
           </span>
+        ) : null}
+        {product.tags.length > 0 ? (
+          <div className="absolute right-3 top-3 flex flex-col items-end gap-1">
+            {product.tags.map((tag) => (
+              <span
+                key={tag}
+                className="rounded-full bg-neon px-2.5 py-1 text-xs font-bold text-canvas"
+              >
+                {productTagLabel(tag)}
+              </span>
+            ))}
+          </div>
         ) : null}
       </div>
       <div className="p-3">

@@ -10,13 +10,7 @@ export const ADMIN_PERMISSIONS = [
   'reviews',
   'promo-codes',
   'support',
+  'integrations',
 ] as const;
 
 export type AdminPermission = (typeof ADMIN_PERMISSIONS)[number];
-
-export function isAdminPermission(value: unknown): value is AdminPermission {
-  return (
-    typeof value === 'string' &&
-    (ADMIN_PERMISSIONS as readonly string[]).includes(value)
-  );
-}

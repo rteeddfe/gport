@@ -9,12 +9,15 @@ import {
   ParseUUIDPipe,
   Patch,
   Query,
+  Req,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import type { Request } from 'express';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import type { AuthUser } from '../common/types/auth-user.js';
 import { Role } from '../generated/prisma/client.js';
+import { auditActorFromAuthUser, auditRequestContext } from '../audit/audit.types.js';
 import { UpdateUserAccessDto } from './dto/update-user-access.dto.js';
 import { UsersQueryDto } from './dto/users-query.dto.js';
 import {
@@ -49,8 +52,12 @@ export class AdminUsersController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateUserAccessDto,
     @CurrentUser() actor: AuthUser,
+    @Req() request: Request,
   ): Promise<AdminUserView> {
-    return this.usersService.updateAccess(id, dto, actor.id);
+    return this.usersService.updateAccess(id, dto, actor.id, {
+      actor: auditActorFromAuthUser(actor),
+      request: auditRequestContext(request),
+    });
   }
 
   @Delete(':id')
@@ -58,8 +65,12 @@ export class AdminUsersController {
   async remove(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() actor: AuthUser,
+    @Req() request: Request,
   ): Promise<void> {
-    await this.usersService.remove(id, actor.id);
+    await this.usersService.remove(id, actor.id, {
+      actor: auditActorFromAuthUser(actor),
+      request: auditRequestContext(request),
+    });
   }
 
   /** Signs the user out everywhere: every active refresh token is revoked. */
@@ -67,8 +78,13 @@ export class AdminUsersController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async revokeAllSessions(
     @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() actor: AuthUser,
+    @Req() request: Request,
   ): Promise<void> {
-    await this.usersService.revokeAllSessions(id);
+    await this.usersService.revokeAllSessions(id, {
+      actor: auditActorFromAuthUser(actor),
+      request: auditRequestContext(request),
+    });
   }
 
   @Delete(':id/sessions/:sessionId')
@@ -76,7 +92,12 @@ export class AdminUsersController {
   async revokeSession(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @CurrentUser() actor: AuthUser,
+    @Req() request: Request,
   ): Promise<void> {
-    await this.usersService.revokeSession(id, sessionId);
+    await this.usersService.revokeSession(id, sessionId, {
+      actor: auditActorFromAuthUser(actor),
+      request: auditRequestContext(request),
+    });
   }
 }

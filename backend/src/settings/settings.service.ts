@@ -36,9 +36,18 @@ export class SettingsService {
   async update(dto: UpdateSiteSettingsDto): Promise<SiteSettingsView> {
     const data = {
       siteName: dto.siteName,
+      descriptor: dto.descriptor,
+      descriptorFooter: dto.descriptorFooter,
       supportEmail: dto.supportEmail,
+      legalName: dto.legalName,
+      legalInn: dto.legalInn,
+      legalOgrn: dto.legalOgrn,
+      legalAddress: dto.legalAddress,
+      legalPhone: dto.legalPhone,
       logoUrl: dto.logoUrl,
       socials: dto.socials as unknown as Prisma.InputJsonValue,
+      headerMenu: dto.headerMenu as unknown as Prisma.InputJsonValue,
+      footerMenus: dto.footerMenus as unknown as Prisma.InputJsonValue,
       seoTitle: dto.seoTitle,
       seoDescription: dto.seoDescription,
       ogImageUrl: dto.ogImageUrl ?? null,

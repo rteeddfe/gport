@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, ShieldCheck, Wallet, Zap, Hourglass } from "lucide-react";
+import { Loader2, ShieldCheck, Wallet, Zap, CreditCard, Headset, MailCheck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { useQuery } from "@tanstack/react-query";
@@ -11,10 +11,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/utils";
+import { useIsMounted } from "@/lib/use-is-mounted";
 import { useMe } from "@/features/auth/hooks/use-me";
 import { formatPrice } from "@/lib/format";
 import { createBuySchema, type BuyValues } from "@/schemas/buy.schema";
 import { createOrder } from "@/services/orders.service";
+import { previewPromoCode } from "@/services/promo-codes.service";
 import { getPaymentMethods } from "@/services/payments.service";
 import type {
   AccountFieldKind,
@@ -52,11 +54,12 @@ export interface CheckoutProduct {
  * they register.
  */
 export function CheckoutForm({ product }: { product: CheckoutProduct }) {
-  const { data: user } = useMe();
+  const { data: user, refetch } = useMe();
   return (
     <CheckoutPanel
       product={product}
       user={user ?? null}
+      refreshSession={user ? () => refetch() : undefined}
     />
   );
 }
@@ -64,13 +67,32 @@ export function CheckoutForm({ product }: { product: CheckoutProduct }) {
 function CheckoutPanel({
   product,
   user,
+  refreshSession,
 }: {
   product: CheckoutProduct;
   user: AuthUser | null;
+  /** Best-effort /auth/me poke before checkout: POST /orders is public and
+   * never 401s, so an expired access token would silently turn a signed-in
+   * buyer into a guest. The poke triggers the client's silent refresh and
+   * rotates the cookie before the order carries it. */
+  refreshSession?: () => Promise<unknown>;
 }) {
   const [serverError, setServerError] = useState<string | null>(null);
   const [isPaying, setIsPaying] = useState(false);
   const [amountRub, setAmountRub] = useState("");
+  // Applied promo: validated by the public preview route on «Применить»;
+  // the backend re-validates against the final subtotal on submit, so a
+  // slightly stale preview (quantity changed after apply) can't be paid.
+  const [appliedPromo, setAppliedPromo] = useState<{
+    code: string;
+    discountCents: number;
+  } | null>(null);
+  const [promoError, setPromoError] = useState<string | null>(null);
+  const [checkingPromo, setCheckingPromo] = useState(false);
+  // Payment methods come from a client query — the server render can see
+  // them resolved while the hydration render cannot, so nothing rendered
+  // from this query may leak into the first paint (see useIsMounted).
+  const isMounted = useIsMounted();
   const methodsQuery = useQuery({
     queryKey: ["payment-methods"],
     queryFn: getPaymentMethods,
@@ -99,7 +121,7 @@ function CheckoutPanel({
     resolver,
     defaultValues: {
       quantity: 1,
-      email: user?.email ?? "",
+      email: "",
       provider: "",
       variantId: isNominal ? (product.variants[0]?.id ?? "") : undefined,
       amountCents: isAmount ? 0 : undefined,
@@ -128,11 +150,44 @@ function CheckoutPanel({
     : isAmount
       ? amountCents + commissionCents
       : product.priceCents * (Number.isFinite(quantity) ? quantity : 1);
+  const promoDiscount = appliedPromo
+    ? Math.min(appliedPromo.discountCents, total)
+    : 0;
+  const payTotal = total - promoDiscount;
+
+  async function applyPromo() {
+    const code = form.getValues("promo")?.trim() ?? "";
+    if (!code) {
+      setAppliedPromo(null);
+      setPromoError("Введите промокод");
+      return;
+    }
+    if (total <= 0) {
+      setPromoError("Сначала выберите товар или сумму");
+      return;
+    }
+    setCheckingPromo(true);
+    setPromoError(null);
+    try {
+      const preview = await previewPromoCode(code, total);
+      setAppliedPromo({ code, discountCents: preview.discountCents });
+    } catch (cause) {
+      setAppliedPromo(null);
+      setPromoError(
+        cause instanceof Error ? cause.message : "Промокод не подошёл",
+      );
+    } finally {
+      setCheckingPromo(false);
+    }
+  }
 
   async function submit(values: BuyValues) {
     setIsPaying(true);
     setServerError(null);
     try {
+      if (refreshSession) {
+        await refreshSession().catch(() => undefined);
+      }
       const result = await createOrder({
         productId: product.id,
         quantity: values.quantity,
@@ -141,6 +196,7 @@ function CheckoutPanel({
         variantId: isNominal ? values.variantId : undefined,
         amountCents: isAmount ? values.amountCents : undefined,
         accountIdentifier: isKey ? undefined : values.accountIdentifier?.trim(),
+        promoCode: appliedPromo?.code,
       });
       // Leave for the acquirer (the emulator page in the test mode).
       window.location.href = result.redirectUrl;
@@ -153,7 +209,7 @@ function CheckoutPanel({
   }
 
   return (
-    <aside className="border-border bg-surface/90 rounded-3xl border p-5 backdrop-blur sm:p-6 lg:sticky lg:top-24">
+    <aside className="border-border bg-surface/90 rounded-3xl border p-4 backdrop-blur sm:p-5 lg:sticky lg:bottom-4 lg:self-end">
       <p className="text-muted-foreground text-xs font-medium">
         Оформление покупки
       </p>
@@ -181,7 +237,7 @@ function CheckoutPanel({
       <form
         onSubmit={form.handleSubmit(submit)}
         noValidate
-        className="mt-5 space-y-5"
+        className="mt-5 space-y-3"
       >
         {isKey ? (
           <div className="space-y-1.5">
@@ -349,9 +405,8 @@ function CheckoutPanel({
             {...form.register("email")}
           />
           <p className="text-muted-foreground text-xs leading-relaxed">
-            Аккаунт не обязателен: чек и коды придут на этот адрес, а покупки
-            сохранятся — если позже зарегистрируетесь с той же почтой, они
-            появятся в кабинете.
+            Аккаунт не обязателен: чек и коды придут на этот адрес.
+            Зарегистрируетесь с той же почтой — покупки появятся в кабинете.
           </p>
           {errors.email ? (
             <p className="text-destructive text-xs">{errors.email.message}</p>
@@ -360,7 +415,7 @@ function CheckoutPanel({
 
         <div className="space-y-1.5">
           <Label>Способ оплаты</Label>
-          {methodsQuery.isPending ? (
+          {!isMounted || methodsQuery.isPending ? (
             <p className="text-muted-foreground text-xs">Загружаем…</p>
           ) : methods.length === 0 ? (
             <p className="text-muted-foreground text-xs">
@@ -400,12 +455,60 @@ function CheckoutPanel({
           ) : null}
         </div>
 
+        <div className="space-y-1.5">
+          <Label htmlFor="buy-promo">Промокод</Label>
+          <div className="flex gap-2">
+            <Input
+              id="buy-promo"
+              placeholder="Например, WELCOME10"
+              autoCapitalize="characters"
+              {...form.register("promo")}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              className="shrink-0"
+              disabled={checkingPromo}
+              onClick={applyPromo}
+            >
+              {checkingPromo ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden />
+              ) : null}
+              Применить
+            </Button>
+          </div>
+          {appliedPromo ? (
+            <p className="text-neon flex items-center justify-between text-xs font-medium">
+              <span>
+                Промокод {appliedPromo.code}: −{formatPrice(promoDiscount)}
+              </span>
+              <button
+                type="button"
+                className="text-muted-foreground hover:text-foreground"
+                onClick={() => setAppliedPromo(null)}
+                aria-label="Убрать промокод"
+              >
+                убрать
+              </button>
+            </p>
+          ) : null}
+          {promoError ? (
+            <p className="text-destructive text-xs">{promoError}</p>
+          ) : null}
+        </div>
+
         <div className="border-border flex items-center justify-between border-t pt-4">
           <span className="text-sm font-medium">К оплате</span>
           <span className="text-gradient text-lg font-bold tabular-nums">
-            {formatPrice(total)}
+            {formatPrice(payTotal)}
           </span>
         </div>
+        {promoDiscount > 0 ? (
+          <p className="text-muted-foreground -mt-2 text-xs tabular-nums">
+            Со скидкой: было {formatPrice(total)}, промокод −
+            {formatPrice(promoDiscount)}
+          </p>
+        ) : null}
         {commissionCents > 0 ? (
           <p className="text-muted-foreground -mt-2 text-xs">
             Включая комиссию сервиса {formatPrice(commissionCents)}
@@ -414,7 +517,7 @@ function CheckoutPanel({
 
         <Button
           type="submit"
-          disabled={!inStock || isPaying || methods.length === 0}
+          disabled={!inStock || isPaying || (isMounted && methods.length === 0)}
           className="w-full gap-2"
         >
           {isPaying ? (
@@ -424,18 +527,26 @@ function CheckoutPanel({
           )}
           Перейти к оплате
         </Button>
-        {product.creditingMode === "MANUAL" ? (
-          <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
-            <Hourglass className="size-3.5" aria-hidden />
-            После оплаты заказ передаётся оператору — зачисление в течение
-            рабочего дня.
-          </p>
-        ) : (
+        {/* Trust lines under the button double as the buffer that keeps
+            it clear of the floating support bubble (bottom-right). */}
+        <div className="space-y-1.5">
           <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
             <Zap className="size-3.5" aria-hidden />
             Моментальная выдача после оплаты.
           </p>
-        )}
+          <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
+            <CreditCard className="size-3.5" aria-hidden />
+            Оплата картами российских банков.
+          </p>
+          <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
+            <Headset className="size-3.5" aria-hidden />
+            Поддержка 24/7 — ответим в течение 5 минут.
+          </p>
+          <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
+            <MailCheck className="size-3.5" aria-hidden />
+            Чек и детали заказа придут на почту.
+          </p>
+        </div>
         {serverError ? (
           <p className="text-destructive text-xs">{serverError}</p>
         ) : null}

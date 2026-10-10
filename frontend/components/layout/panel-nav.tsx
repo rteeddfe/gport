@@ -10,6 +10,8 @@ export interface PanelNavItem {
   href: string;
   label: string;
   icon: LucideIcon;
+  /** Pending-items counter chip (e.g. new support tickets / reviews). */
+  badge?: number;
 }
 
 /**
@@ -58,6 +60,11 @@ export function PanelNav({
           >
             <item.icon className={cn("size-4", active && "text-brand")} />
             {item.label}
+            {item.badge ? (
+              <span className="bg-brand ml-auto grid min-w-5 place-items-center rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white tabular-nums">
+                {item.badge > 99 ? "99+" : item.badge}
+              </span>
+            ) : null}
           </Link>
         );
       })}

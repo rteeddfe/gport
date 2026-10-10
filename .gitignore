@@ -5,3 +5,5 @@ Desktop.ini
 
 # editor droppings
 *.swp
+backend-dev.log
+pg-dev.log

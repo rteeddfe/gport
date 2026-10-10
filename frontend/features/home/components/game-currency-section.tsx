@@ -2,7 +2,7 @@ import { CatalogSection } from "./catalog-section";
 
 /** Home block «Игровые валюты»: published products of the `game-currency`
  * category, priced «from» per product. */
-export function GameCurrencySection() {
+export function GameCurrencySection({ logoUrl = "" }: { logoUrl?: string }) {
   return (
     <CatalogSection
       categorySlug="game-currency"
@@ -13,6 +13,7 @@ export function GameCurrencySection() {
         </>
       }
       moreHref="/products?category=game-currency"
+      logoUrl={logoUrl}
     />
   );
 }

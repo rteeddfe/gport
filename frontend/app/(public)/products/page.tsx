@@ -7,8 +7,11 @@ import { ErrorState } from "@/components/shared/error-state";
 import { Button } from "@/components/ui/button";
 import { getErrorMessage } from "@/lib/api/errors";
 import { getCategories } from "@/services/categories.service";
+import { getListValues } from "@/services/list-values.service";
+import { getFallbackLogo } from "@/services/settings.service";
 import { getProducts, type FindProductsParams } from "@/services/products.service";
 import { CatalogFilters } from "@/features/products/components/catalog-filters";
+import { CatalogSidebarFilters } from "@/features/products/components/catalog-sidebar-filters";
 import { ProductRevealGrid } from "@/features/products/components/product-reveal-grid";
 import type { Category, Product } from "@/types/api";
 
@@ -16,11 +19,22 @@ export const metadata = { title: "Каталог" };
 
 const PAGE_SIZE = 12;
 const SORTS = new Set(["new", "price_asc", "price_desc"]);
+/** Section slugs whose category chips gate the sidebar facets: only the
+ * games section carries genre/platform filters. */
+const GAMES_SECTION = "games";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
 function asString(value: string | string[] | undefined): string {
   return typeof value === "string" ? value : "";
+}
+
+function asList(value: string | string[] | undefined): string[] {
+  const raw = Array.isArray(value) ? value.join(",") : value;
+  return (raw ?? "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function pageHref(current: Record<string, string>, page: number): string {
@@ -38,15 +52,19 @@ function pageHref(current: Record<string, string>, page: number): string {
  * Catalog: category chips / search / sorting live in the URL query and
  * are handled by the client `CatalogFilters`; this Server Component
  * reads the query, fetches through the service layer and renders the
- * grid + pagination.
+ * grid + pagination. Games-section listings additionally get the
+ * genre/platform sidebar facets (multi-select, URL-encoded).
  */
 export default async function ProductsPage({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
+  const logoUrl = await getFallbackLogo();
   const category = asString(params.category);
   const search = asString(params.search);
   const sortParam = asString(params.sort);
   const sort = (SORTS.has(sortParam) ? sortParam : "new") as FindProductsParams["sort"];
   const page = Math.max(1, Number.parseInt(asString(params.page) || "1", 10) || 1);
+  const genre = asList(params.genre);
+  const platform = asList(params.platform);
 
   let categories: Category[] = [];
   let items: Product[] = [];
@@ -63,6 +81,8 @@ export default async function ProductsPage({ searchParams }: { searchParams: Sea
         sort,
         page,
         limit: PAGE_SIZE,
+        ...(genre.length > 0 ? { genre: genre.join(",") } : {}),
+        ...(platform.length > 0 ? { platform: platform.join(",") } : {}),
       }),
     ]);
     categories = cats;
@@ -73,10 +93,24 @@ export default async function ProductsPage({ searchParams }: { searchParams: Sea
     errorMessage = getErrorMessage(error);
   }
 
+  // The sidebar facets apply to the games section only (the tab chips
+  // cover the rest); resolve them once both fetches are in.
+  const activeCategory = categories.find((item) => item.slug === category);
+  const isGamesListing =
+    !category ||
+    activeCategory?.type === GAMES_SECTION ||
+    categories
+      .filter((item) => item.type === GAMES_SECTION)
+      .some((item) => item.slug === category);
+  const listValues = isGamesListing ? await getListValues().catch(() => []) : [];
+  const showSidebar = isGamesListing && listValues.length > 0;
+
   const current = {
     ...(category ? { category } : {}),
     ...(search ? { search } : {}),
     ...(sortParam && SORTS.has(sortParam) ? { sort: sortParam } : {}),
+    ...(genre.length > 0 ? { genre: genre.join(",") } : {}),
+    ...(platform.length > 0 ? { platform: platform.join(",") } : {}),
   };
 
   return (
@@ -101,19 +135,32 @@ export default async function ProductsPage({ searchParams }: { searchParams: Sea
         ) : (
           <>
             <CatalogFilters categories={categories} />
-            <div className="mt-8">
-              {items.length === 0 ? (
-                <EmptyState
-                  title="Ничего не найдено"
-                  description="Попробуйте изменить запрос или сбросить фильтры."
-                />
-              ) : (
-                <ProductRevealGrid
-                  items={items}
-                  columnsClass="grid-cols-2 sm:grid-cols-3 lg:grid-cols-4"
-                  sizes="(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
-                />
-              )}
+            <div className={showSidebar ? "mt-8 grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]" : "mt-8"}>
+              {showSidebar ? (
+                <aside className="lg:sticky lg:top-24 lg:self-start">
+                  <CatalogSidebarFilters
+                    genres={listValues.filter((value) => value.kind === "genre")}
+                    platforms={listValues.filter((value) => value.kind === "platform")}
+                    selectedGenre={genre}
+                    selectedPlatform={platform}
+                  />
+                </aside>
+              ) : null}
+              <div>
+                {items.length === 0 ? (
+                  <EmptyState
+                    title="Ничего не найдено"
+                    description="Попробуйте изменить запрос или сбросить фильтры."
+                  />
+                ) : (
+                  <ProductRevealGrid
+                    items={items}
+                    columnsClass={showSidebar ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4"}
+                    sizes={showSidebar ? "(min-width: 1024px) 33vw, (min-width: 640px) 33vw, 50vw" : "(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"}
+                    logoUrl={logoUrl}
+                  />
+                )}
+              </div>
             </div>
             {pages > 1 ? (
               <nav

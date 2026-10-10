@@ -2,39 +2,36 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { AppInstallLinks } from "@/features/pwa/components/app-install-links";
+import { getPolicies } from "@/services/policies.service";
 import { getSettings } from "@/services/settings.service";
 import { Container } from "./container";
-
-/** Mirrors the reference footer layout: buyer column + documents column
- * (FAQ and reviews deep-link to the homepage sections). */
-const BUYER_LINKS = [
-  { href: "/#faq", label: "Часто задаваемые вопросы" },
-  { href: "/#reviews", label: "Отзывы" },
-  { href: "/policies/refund", label: "Политика возврата средств" },
-] as const;
-
-const STORE_LINKS = [
-  { href: "/policies/contacts", label: "Контакты" },
-  { href: "/policies/offer", label: "Публичная оферта" },
-  { href: "/policies/privacy", label: "Политика конфиденциальности" },
-  { href: "/policies/rightsholders", label: "Информация для правообладателям" },
-] as const;
 
 function footerLinkClass(): string {
   return "text-muted-foreground transition-colors hover:text-foreground";
 }
 
-/** Storefront footer — brand name, socials and the support email come from
- * the admin site settings; on API failure the seeded statics render. */
+/** Storefront footer: brand (logo, name, descriptor), the admin-built menu
+ * columns (settings → «Основные настройки» → меню футера), legal pages —
+ * only those that actually exist in the DB (created in the admin), social
+ * circles and the support email. Anything empty does not render. */
 export async function Footer() {
-  const settings = await getSettings().catch(() => null);
-  const siteName = settings?.siteName ?? "GPort";
-  const logoUrl = settings?.logoUrl ?? "/logo2.png";
-  const socials = settings?.socials ?? [
-    { label: "Telegram", url: "https://t.me/gport", iconUrl: "/brands/telegram-muted.svg" },
-    { label: "VK", url: "https://vk.com/gport", iconUrl: "/brands/vk.svg" },
-  ];
-  const supportEmail = settings?.supportEmail ?? "support@gport.ru";
+  const [settings, policies] = await Promise.all([
+    getSettings().catch(() => null),
+    getPolicies().catch(() => []),
+  ]);
+  const siteName = settings?.siteName ?? "";
+  const logoUrl = settings?.logoUrl ?? "";
+  const descriptor = settings?.descriptorFooter ?? "";
+  const menus = settings?.footerMenus ?? [];
+  const socials = settings?.socials ?? [];
+  const supportEmail = settings?.supportEmail ?? "";
+  const legal = [
+    settings?.legalName,
+    settings?.legalInn ? `ИНН ${settings.legalInn}` : "",
+    settings?.legalOgrn ? `ОГРН(ИП) ${settings.legalOgrn}` : "",
+    settings?.legalAddress,
+  ].filter(Boolean);
+  const legalPhone = settings?.legalPhone ?? "";
 
   return (
     <footer className="relative overflow-hidden border-t">
@@ -46,45 +43,68 @@ export async function Footer() {
         <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1.2fr]">
           <div>
             <Link href="/" className="flex w-fit items-center gap-2.5">
-              <Image
-                src={logoUrl}
-                alt={siteName}
-                width={2400}
-                height={1569}
-                className="h-9 w-auto object-contain"
-              />
+              {logoUrl ? (
+                <Image
+                  src={logoUrl}
+                  alt={siteName}
+                  width={2400}
+                  height={1569}
+                  className="h-9 w-auto object-contain"
+                />
+              ) : null}
             </Link>
-            <p className="text-muted-foreground mt-4 max-w-xs text-sm leading-relaxed">
-              Интернет-магазин цифровых игровых товаров и пополнений. Моментальная
-              доставка, честные цены и поддержка 24/7.
-            </p>
+            {descriptor ? (
+              <p className="text-muted-foreground mt-4 max-w-xs text-sm leading-relaxed">
+                {descriptor}
+              </p>
+            ) : null}
           </div>
 
-          <nav aria-label="Покупателям">
-            <h3 className="text-sm font-semibold">Покупателям</h3>
-            <ul className="mt-4 space-y-2.5 text-sm">
-              {BUYER_LINKS.map((link) => (
-                <li key={link.href}>
-                  <Link href={link.href} className={footerLinkClass()}>
-                    {link.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </nav>
+          {menus.map((menu, menuIndex) => (
+            <nav
+              key={`${menu.title}-${menuIndex}`}
+              aria-label={menu.title || `Меню ${menuIndex + 1}`}
+            >
+              {menu.title ? (
+                <h3 className="text-sm font-semibold">{menu.title}</h3>
+              ) : null}
+              <ul
+                className={
+                  menu.title ? "mt-4 space-y-2.5 text-sm" : "space-y-2.5 text-sm"
+                }
+              >
+                {/* Skip rows saved without a link — an empty href would
+                    render an <a href=""> and warn in the console. */}
+                {menu.items
+                  .filter((item) => item.href)
+                  .map((item) => (
+                    <li key={`${item.href}-${item.label}`}>
+                      <Link href={item.href} className={footerLinkClass()}>
+                        {item.label}
+                      </Link>
+                    </li>
+                  ))}
+              </ul>
+            </nav>
+          ))}
 
-          <nav aria-label="Магазин">
-            <h3 className="text-sm font-semibold">{siteName}</h3>
-            <ul className="mt-4 space-y-2.5 text-sm">
-              {STORE_LINKS.map((link) => (
-                <li key={link.href}>
-                  <Link href={link.href} className={footerLinkClass()}>
-                    {link.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </nav>
+          {policies.length > 0 ? (
+            <nav aria-label="Документы">
+              <h3 className="text-sm font-semibold">Документы</h3>
+              <ul className="mt-4 space-y-2.5 text-sm">
+                {policies.map((policy) => (
+                  <li key={policy.slug}>
+                    <Link
+                      href={`/policies/${policy.slug}`}
+                      className={footerLinkClass()}
+                    >
+                      {policy.title}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          ) : null}
         </div>
 
         <div className="border-border text-muted-foreground mt-10 border-t pt-6 text-xs">
@@ -115,18 +135,27 @@ export async function Footer() {
             <span aria-hidden className="border-border bg-border/60 mx-1 h-6 w-px" />
             <AppInstallLinks />
           </div>
-          <p className="mt-4">
-            © {new Date().getFullYear()} {siteName}. Все права защищены
-          </p>
-          <p className="mt-1">
-            Поддержка:{" "}
-            <a
-              href={`mailto:${supportEmail}`}
-              className="transition-colors hover:text-foreground"
-            >
-              {supportEmail}
-            </a>
-          </p>
+          {siteName ? (
+            <p className="mt-4">
+              © {new Date().getFullYear()} {siteName}. Все права защищены
+            </p>
+          ) : null}
+          {supportEmail ? (
+            <p className="mt-1">
+              Поддержка:{" "}
+              <a
+                href={`mailto:${supportEmail}`}
+                className="transition-colors hover:text-foreground"
+              >
+                {supportEmail}
+              </a>
+            </p>
+          ) : null}
+          {legal.length > 0 || legalPhone ? (
+            <p className="mt-3 leading-relaxed">
+              {[...legal, legalPhone].filter(Boolean).join(" · ")}
+            </p>
+          ) : null}
         </div>
       </Container>
     </footer>

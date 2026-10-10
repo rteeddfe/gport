@@ -45,21 +45,6 @@ export class AdminProductsController {
     return this.productsService.findOne(id);
   }
 
-  @Get(':id/keys')
-  listKeys(@Param('id', ParseUUIDPipe) id: string) {
-    return this.productsService.listKeys(id);
-  }
-
-  @Put(':id/keys')
-  @HttpCode(HttpStatus.OK)
-  async replaceKeys(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: ReplaceProductKeysDto,
-  ): Promise<{ ok: true }> {
-    await this.productsService.replaceKeys(id, dto.keys);
-    return { ok: true };
-  }
-
   @Get(':id/faq')
   listFaq(@Param('id', ParseUUIDPipe) id: string) {
     return this.productsService.listFaq(id);
@@ -92,5 +77,33 @@ export class AdminProductsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
     await this.productsService.remove(id);
+  }
+}
+
+/** ProductKey pool — raw key values are the sellable goods themselves
+ * (the same values the orders API hides behind SUPER_ADMIN), so this
+ * boundary matches the order-view policy: SUPER_ADMIN only. A separate
+ * controller (not per-handler metadata) keeps the guard semantics plain:
+ * role check only, no ADMIN permission can reach these routes. */
+@ApiTags('admin/products')
+@ApiBearerAuth()
+@Roles(Role.SUPER_ADMIN)
+@Controller('admin/products')
+export class AdminProductKeysController {
+  constructor(private readonly productsService: ProductsService) {}
+
+  @Get(':id/keys')
+  listKeys(@Param('id', ParseUUIDPipe) id: string) {
+    return this.productsService.listKeys(id);
+  }
+
+  @Put(':id/keys')
+  @HttpCode(HttpStatus.OK)
+  async replaceKeys(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReplaceProductKeysDto,
+  ): Promise<{ ok: true }> {
+    await this.productsService.replaceKeys(id, dto.keys);
+    return { ok: true };
   }
 }

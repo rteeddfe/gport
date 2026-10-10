@@ -12,6 +12,8 @@ export interface CreateOrderInput {
   amountCents?: number;
   /** TOPUP_* only: the account to credit (login, player ID). */
   accountIdentifier?: string;
+  /** Optional promo code — validated and priced server-side. */
+  promoCode?: string;
 }
 
 export interface CreateOrderResult extends OrderView {
@@ -54,8 +56,4 @@ export function adminGetOrders(
       ),
     )}`,
   );
-}
-
-export function adminGetOrder(id: string): Promise<AdminOrderView> {
-  return apiFetch<AdminOrderView>(`/admin/orders/${id}`);
 }

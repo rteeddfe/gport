@@ -2,11 +2,32 @@ import { Injectable } from '@nestjs/common';
 import type { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../database/prisma.service.js';
 import type { AccountFieldKind } from '../generated/prisma/client.js';
-import type { ServiceRefDto, UpdateHomeContentDto } from './dto/update-home-content.dto.js';
+import type {
+  ServiceRefDto,
+  UpdateHomeContentDto,
+} from './dto/update-home-content.dto.js';
 
 export interface HomeWallCard {
   imageUrl: string;
   href: string;
+}
+
+/** One stat card of the home trust block. */
+export interface HomeStatCard {
+  label: string;
+  prefix: string;
+  value: string;
+  description: string;
+}
+
+/** One community card of the home trust block. */
+export interface HomeCommunityCard {
+  brand: string;
+  name: string;
+  description: string;
+  usersCount: string;
+  usersLabel: string;
+  url: string;
 }
 
 /** A resolved service reference: the picked product's public fields the
@@ -34,6 +55,9 @@ export interface HomeContentView {
   title: string;
   titleAccent: string;
   subtitle: string;
+  /** Primary CTA (filled style); empty = the button does not render. */
+  ctaPrimaryLabel: string;
+  ctaPrimaryHref: string;
   ctaLabel: string;
   ctaHref: string;
   tiles: string[];
@@ -41,6 +65,9 @@ export interface HomeContentView {
   carouselCards: HomeWallCard[];
   topupServices: HomeServiceCard[];
   serviceCards: HomeServiceCard[];
+  statCards: HomeStatCard[];
+  communityLabel: string;
+  communityCards: HomeCommunityCard[];
   updatedAt: Date;
 }
 
@@ -64,6 +91,8 @@ export class HomeContentService {
       title: dto.title,
       titleAccent: dto.titleAccent,
       subtitle: dto.subtitle ?? '',
+      ctaPrimaryLabel: dto.ctaPrimaryLabel,
+      ctaPrimaryHref: dto.ctaPrimaryHref,
       ctaLabel: dto.ctaLabel,
       ctaHref: dto.ctaHref,
       tiles: dto.tiles as unknown as Prisma.InputJsonValue,
@@ -71,6 +100,9 @@ export class HomeContentService {
       carouselCards: dto.carouselCards as unknown as Prisma.InputJsonValue,
       topupServices: dto.topupServices as unknown as Prisma.InputJsonValue,
       serviceCards: dto.serviceCards as unknown as Prisma.InputJsonValue,
+      statCards: dto.statCards as unknown as Prisma.InputJsonValue,
+      communityLabel: dto.communityLabel,
+      communityCards: dto.communityCards as unknown as Prisma.InputJsonValue,
     };
     const row = await this.prisma.homeContent.upsert({
       where: { id: HOME_ID },
@@ -135,6 +167,8 @@ export class HomeContentService {
     title: string;
     titleAccent: string;
     subtitle: string;
+    ctaPrimaryLabel: string;
+    ctaPrimaryHref: string;
     ctaLabel: string;
     ctaHref: string;
     tiles: Prisma.JsonValue;
@@ -142,6 +176,9 @@ export class HomeContentService {
     carouselCards: Prisma.JsonValue;
     topupServices: Prisma.JsonValue;
     serviceCards: Prisma.JsonValue;
+    statCards: Prisma.JsonValue;
+    communityLabel: string;
+    communityCards: Prisma.JsonValue;
     updatedAt: Date;
   }): Promise<HomeContentView> {
     const [topupServices, serviceCards] = await Promise.all([
@@ -153,6 +190,8 @@ export class HomeContentService {
       title: row.title,
       titleAccent: row.titleAccent,
       subtitle: row.subtitle,
+      ctaPrimaryLabel: row.ctaPrimaryLabel,
+      ctaPrimaryHref: row.ctaPrimaryHref,
       ctaLabel: row.ctaLabel,
       ctaHref: row.ctaHref,
       tiles: (row.tiles as unknown as string[]) ?? [],
@@ -160,6 +199,10 @@ export class HomeContentService {
       carouselCards: (row.carouselCards as unknown as HomeWallCard[]) ?? [],
       topupServices,
       serviceCards,
+      statCards: (row.statCards as unknown as HomeStatCard[]) ?? [],
+      communityLabel: row.communityLabel,
+      communityCards:
+        (row.communityCards as unknown as HomeCommunityCard[]) ?? [],
       updatedAt: row.updatedAt,
     };
   }

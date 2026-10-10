@@ -117,6 +117,31 @@ export class PromoCodesService {
     await this.prisma.promoCode.delete({ where: { id } });
   }
 
+  /** Checkout resolution shared by the direct order creation and the
+   * public «применить промокод» preview. Codes are stored uppercase by
+   * the admin DTO — the buyer's input is normalized the same way. */
+  async resolveForCheckout(
+    rawCode: string,
+    subtotalCents: number,
+  ): Promise<{ promo: PromoCode; discountCents: number; totalCents: number }> {
+    const code = rawCode.trim().toUpperCase();
+    const promo = await this.prisma.promoCode.findUnique({ where: { code } });
+    if (!promo || !isPromoActiveNow(promo)) {
+      throw new BadRequestException('Промокод недействителен или истёк');
+    }
+    if (promo.minSubtotalCents != null && subtotalCents < promo.minSubtotalCents) {
+      throw new BadRequestException(
+        `Промокод действует от суммы ${promo.minSubtotalCents / 100} ₽`,
+      );
+    }
+    const discountCents = computeDiscountCents(
+      promo.discountType,
+      promo.value,
+      subtotalCents,
+    );
+    return { promo, discountCents, totalCents: subtotalCents - discountCents };
+  }
+
   private async getExisting(id: string): Promise<PromoCode> {
     const promo = await this.prisma.promoCode.findUnique({ where: { id } });
     if (!promo) {

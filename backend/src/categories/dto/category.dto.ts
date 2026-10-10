@@ -26,6 +26,16 @@ export class CreateCategoryDto {
   @IsString()
   @MaxLength(500)
   description?: string;
+
+  /** Section type: games | subscriptions | currency | other. */
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-z0-9-]*$/, {
+    message: 'type must be latin lowercase words separated by dashes',
+  })
+  @MaxLength(30)
+  type?: string;
+
 }
 
 export class UpdateCategoryDto extends PartialType(CreateCategoryDto) {}

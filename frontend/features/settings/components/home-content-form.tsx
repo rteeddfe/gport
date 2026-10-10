@@ -262,6 +262,22 @@ export function HomeContentForm({ content }: HomeContentFormProps) {
     .filter((product) => product.kind !== "GAME_KEY")
     .map((product) => ({ id: product.id, title: product.title }));
 
+  // The trust block renders two fixed slots per list; pad the stored
+  // rows with blank ones so both slots always have a bound value.
+  const EMPTY_STAT = { label: "", prefix: "", value: "", description: "" };
+  const EMPTY_COMMUNITY = {
+    brand: "telegram" as const,
+    name: "",
+    description: "",
+    usersCount: "",
+    usersLabel: "",
+    url: "",
+  };
+  const statCards = [0, 1].map((i) => content.statCards[i] ?? EMPTY_STAT);
+  const communityCards = [0, 1].map(
+    (i) => content.communityCards[i] ?? EMPTY_COMMUNITY,
+  );
+
   const form = useForm<HomeContentValues>({
     resolver: zodResolver(homeContentSchema),
     defaultValues: {
@@ -269,6 +285,8 @@ export function HomeContentForm({ content }: HomeContentFormProps) {
       title: content.title,
       titleAccent: content.titleAccent,
       subtitle: content.subtitle,
+      ctaPrimaryLabel: content.ctaPrimaryLabel,
+      ctaPrimaryHref: content.ctaPrimaryHref,
       ctaLabel: content.ctaLabel,
       ctaHref: content.ctaHref,
       tiles: content.tiles,
@@ -282,6 +300,9 @@ export function HomeContentForm({ content }: HomeContentFormProps) {
         productId: service.productId,
         iconUrl: service.iconUrl ?? "",
       })),
+      statCards,
+      communityLabel: content.communityLabel,
+      communityCards,
     },
   });
   const errors = form.formState.errors;
@@ -296,6 +317,8 @@ export function HomeContentForm({ content }: HomeContentFormProps) {
         title: values.title,
         titleAccent: values.titleAccent,
         subtitle: values.subtitle || "",
+        ctaPrimaryLabel: values.ctaPrimaryLabel,
+        ctaPrimaryHref: values.ctaPrimaryHref,
         ctaLabel: values.ctaLabel,
         ctaHref: values.ctaHref,
         tiles: values.tiles,
@@ -309,6 +332,9 @@ export function HomeContentForm({ content }: HomeContentFormProps) {
           productId: service.productId,
           iconUrl: service.iconUrl ?? null,
         })),
+        statCards: values.statCards,
+        communityLabel: values.communityLabel,
+        communityCards: values.communityCards,
       });
       void revalidateStorefrontTags(["home-content"]);
       setSavedAt(new Date().toLocaleTimeString("ru-RU"));
@@ -327,13 +353,6 @@ export function HomeContentForm({ content }: HomeContentFormProps) {
           <Input id="kicker" {...form.register("kicker")} />
           {errors.kicker ? (
             <p className="text-destructive text-xs">{errors.kicker.message}</p>
-          ) : null}
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="ctaHref">Ссылка кнопки</Label>
-          <Input id="ctaHref" placeholder="/products" {...form.register("ctaHref")} />
-          {errors.ctaHref ? (
-            <p className="text-destructive text-xs">{errors.ctaHref.message}</p>
           ) : null}
         </div>
         <div className="space-y-1.5">
@@ -362,12 +381,47 @@ export function HomeContentForm({ content }: HomeContentFormProps) {
         ) : null}
       </div>
 
-      <div className="space-y-1.5">
-        <Label htmlFor="ctaLabel">Текст кнопки</Label>
-        <Input id="ctaLabel" {...form.register("ctaLabel")} />
-        {errors.ctaLabel ? (
-          <p className="text-destructive text-xs">{errors.ctaLabel.message}</p>
-        ) : null}
+      <div>
+        <p className="text-sm font-medium">Кнопки героя</p>
+        <p className="text-muted-foreground text-xs">
+          Обе пары — текст и ссылка. Пустая пара — кнопка не выводится.
+        </p>
+        <div className="mt-3 grid gap-4 lg:grid-cols-2">
+          <div className="border-border space-y-3 rounded-xl border p-4">
+            <p className="text-muted-foreground text-xs font-semibold uppercase tracking-wider">
+              Кнопка 1 — основная (заливка)
+            </p>
+            <div className="space-y-1.5">
+              <Label htmlFor="ctaPrimaryLabel">Текст</Label>
+              <Input
+                id="ctaPrimaryLabel"
+                placeholder="Пополнение"
+                {...form.register("ctaPrimaryLabel")}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ctaPrimaryHref">Ссылка</Label>
+              <Input
+                id="ctaPrimaryHref"
+                placeholder="/topup"
+                {...form.register("ctaPrimaryHref")}
+              />
+            </div>
+          </div>
+          <div className="border-border space-y-3 rounded-xl border p-4">
+            <p className="text-muted-foreground text-xs font-semibold uppercase tracking-wider">
+              Кнопка 2 — контурная
+            </p>
+            <div className="space-y-1.5">
+              <Label htmlFor="ctaLabel">Текст</Label>
+              <Input id="ctaLabel" placeholder="Каталог игр" {...form.register("ctaLabel")} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ctaHref">Ссылка</Label>
+              <Input id="ctaHref" placeholder="/products" {...form.register("ctaHref")} />
+            </div>
+          </div>
+        </div>
       </div>
 
       <div>
@@ -407,8 +461,8 @@ export function HomeContentForm({ content }: HomeContentFormProps) {
         errors={errors}
         name="serviceCards"
         title="Карточки сервисов (третий блок)"
-        hint="До 7 сервисов пополнения вокруг плитки «Посмотреть все»; карточка ведёт на персональную страницу пополнения. Пустой список — стандартные плитки."
-        emptyHint="Карточки не заданы — используется стандартный блок."
+        hint="До 7 сервисов пополнения вокруг плитки «Посмотреть все»; карточка ведёт на персональную страницу пополнения. Пустой список — блок не выводится."
+        emptyHint="Карточки не заданы — блок на главной скрыт."
         max={7}
         products={topupProducts}
       />
@@ -430,6 +484,127 @@ export function HomeContentForm({ content }: HomeContentFormProps) {
         hint="Изображение и ссылка каждой карточки цилиндра. Пустой список — остаются стандартные обложки (без ссылок)."
         emptyHint="Карточки не заданы — используется стандартный цилиндр."
       />
+
+      <div>
+        <p className="text-sm font-medium">
+          Блок доверия (перед новостями): статистика
+        </p>
+        <p className="text-muted-foreground text-xs">
+          Две плитки с цифрами. Пустое значение — плитка не выводится; оба
+          пустых — блок скрыт.
+        </p>
+        {[0, 1].map((index) => (
+          <div key={index} className="border-border bg-canvas/40 mt-3 rounded-xl border p-4">
+            <p className="text-xs font-semibold">Плитка {index + 1}</p>
+            <div className="mt-3 grid gap-3 lg:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor={`stat-${index}-label`}>Бейдж</Label>
+                <Input
+                  id={`stat-${index}-label`}
+                  placeholder="Количество клиентов:"
+                  {...form.register(`statCards.${index}.label`)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor={`stat-${index}-prefix`}>Слово перед числом</Label>
+                <Input
+                  id={`stat-${index}-prefix`}
+                  placeholder="Более"
+                  {...form.register(`statCards.${index}.prefix`)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor={`stat-${index}-value`}>Число (градиент)</Label>
+                <Input
+                  id={`stat-${index}-value`}
+                  placeholder="136 684"
+                  {...form.register(`statCards.${index}.value`)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor={`stat-${index}-description`}>Подпись</Label>
+                <Input
+                  id={`stat-${index}-description`}
+                  placeholder="довольных клиентов"
+                  {...form.register(`statCards.${index}.description`)}
+                />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div>
+        <div className="space-y-1.5">
+          <Label htmlFor="communityLabel">
+            Блок доверия: заголовок соцсетей
+          </Label>
+          <Input
+            id="communityLabel"
+            placeholder="Наши социальные сети"
+            {...form.register("communityLabel")}
+          />
+          <p className="text-muted-foreground text-xs">
+            Пустые карточки (имя или ссылка) не выводятся.
+          </p>
+        </div>
+        {[0, 1].map((index) => (
+          <div
+            key={index}
+            className="border-border bg-canvas/40 mt-3 rounded-xl border p-4"
+          >
+            <p className="text-xs font-semibold">Соцсеть {index + 1}</p>
+            <div className="mt-3 grid gap-3 lg:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label>Сеть</Label>
+                <Controller
+                  control={form.control}
+                  name={`communityCards.${index}.brand` as const}
+                  render={({ field }) => (
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="telegram">Telegram</SelectItem>
+                        <SelectItem value="vk">ВКонтакте</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Название</Label>
+                <Input placeholder="@gport" {...form.register(`communityCards.${index}.name`)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Описание</Label>
+                <Input
+                  placeholder="Конкурсы и самые свежие новости игрового мира!"
+                  {...form.register(`communityCards.${index}.description`)}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Юзеры</Label>
+                  <Input placeholder="10 000+" {...form.register(`communityCards.${index}.usersCount`)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Подпись юзеров</Label>
+                  <Input
+                    placeholder="регулярных юзеров"
+                    {...form.register(`communityCards.${index}.usersLabel`)}
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Ссылка</Label>
+                <Input placeholder="https://t.me/gport" {...form.register(`communityCards.${index}.url`)} />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
 
       <div className="flex items-center gap-4">
         <Button type="submit" disabled={isPending} className="gap-2">

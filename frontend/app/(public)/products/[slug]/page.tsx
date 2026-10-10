@@ -12,6 +12,9 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { formatPrice } from "@/lib/format";
+import { SYSREQ_ROWS } from "@/lib/system-requirements";
+import { getListValues } from "@/services/list-values.service";
+import { getFallbackLogo } from "@/services/settings.service";
 import { CheckoutForm } from "@/features/products/components/checkout-form";
 import { ProductGallery } from "@/features/products/components/product-gallery";
 import { ProductRevealGrid } from "@/features/products/components/product-reveal-grid";
@@ -41,20 +44,40 @@ function discountPercent(priceCents: number, oldPriceCents: number | null): numb
  * FAQ) and the sticky inline checkout (no popup) — then related products. */
 export default async function ProductPage({ params }: { params: Params }) {
   const { slug } = await params;
-  const product = await getProductDetail(slug).catch(() => null);
+  const [product, listValues] = await Promise.all([
+    getProductDetail(slug).catch(() => null),
+    getListValues().catch(() => []),
+  ]);
   if (!product) notFound();
+  const logoUrl = await getFallbackLogo();
+
+  /** Display name of a stored registry slug (falls back to the raw slug
+   * when the value was removed from the registry). */
+  const listName = (kind: string, slugValue: string): string =>
+    listValues.find((value) => value.kind === kind && value.slug === slugValue)
+      ?.name ?? slugValue;
 
   const discount = discountPercent(product.priceCents, product.oldPriceCents);
   const isKey = product.kind === "GAME_KEY";
   const inStock = product.stock > 0;
   const cover = product.images[0] ?? null;
   const attributes = [
-    { label: "Регион", value: product.region },
-    { label: "Платформа", value: product.platform },
-    { label: "Жанры", value: product.genre.join(", ") },
-    { label: "Локализация", value: product.localization },
-    { label: "Возраст", value: product.ageRating },
-  ].filter((attribute): attribute is { label: string; value: string } => Boolean(attribute.value));
+    product.platform
+      ? { label: "Платформа", value: listName("platform", product.platform) }
+      : null,
+    product.genre.length > 0
+      ? { label: "Жанры", value: product.genre.map((g) => listName("genre", g)).join(", ") }
+      : null,
+    product.releaseYear != null
+      ? { label: "Год выхода", value: product.releaseYear.toString() }
+      : null,
+    product.consoles.length > 0
+      ? { label: "Консоли", value: product.consoles.map((c) => listName("consoles", c)).join(", ") }
+      : null,
+  ].filter(
+    (attribute): attribute is { label: string; value: string } =>
+      attribute !== null && Boolean(attribute.value),
+  );
 
   return (
     <div className="relative">
@@ -110,14 +133,15 @@ export default async function ProductPage({ params }: { params: Params }) {
         </nav>
 
         {/* Two blocks: the product card on the left (gallery, key facts,
-            description, activation, FAQ), the sticky checkout on the
-            right. Related products follow below, spanning both columns. */}
+            description, activation, FAQ), the checkout on the right — it
+            sticks to the viewport bottom while the page scrolls. Related
+            products follow below, spanning both columns. */}
         <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,400px)] lg:items-start">
           <div className="border-border bg-surface/90 rounded-3xl border p-4 backdrop-blur sm:p-6">
             {/* Top row: gallery on the left, key facts on the right. */}
             <div className="grid gap-6 sm:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
               <div>
-                <ProductGallery images={product.images} title={product.title} />
+                <ProductGallery images={product.images} title={product.title} logoUrl={logoUrl} />
               </div>
 
               <div>
@@ -181,6 +205,15 @@ export default async function ProductPage({ params }: { params: Params }) {
               </div>
             </div>
 
+            {product.instruction ? (
+              <section className="border-border mt-6 border-t pt-6">
+                <h2 className="text-lg font-semibold">Как активировать</h2>
+                <p className="text-muted-foreground mt-3 whitespace-pre-line text-sm leading-relaxed">
+                  {product.instruction}
+                </p>
+              </section>
+            ) : null}
+
             {product.description ? (
               <section className="border-border mt-6 border-t pt-6">
                 <h2 className="text-lg font-semibold">Описание</h2>
@@ -190,12 +223,48 @@ export default async function ProductPage({ params }: { params: Params }) {
               </section>
             ) : null}
 
-            {product.instruction ? (
+            {/* PC system requirements (games): the two old-store cards —
+                only filled rows, hidden entirely when nothing is set
+                (console games have no PC requirements by design). */}
+            {product.systemRequirements?.minimum ||
+            product.systemRequirements?.recommended ? (
               <section className="border-border mt-6 border-t pt-6">
-                <h2 className="text-lg font-semibold">Как активировать</h2>
-                <p className="text-muted-foreground mt-3 whitespace-pre-line text-sm leading-relaxed">
-                  {product.instruction}
-                </p>
+                <h2 className="text-lg font-semibold">Системные требования</h2>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  {(["minimum", "recommended"] as const).map((tier) => {
+                    const rows = product.systemRequirements?.[tier];
+                    if (!rows) return null;
+                    return (
+                      <div
+                        key={tier}
+                        className="border-border bg-canvas/60 rounded-2xl border p-5"
+                      >
+                        <p className="text-muted-foreground text-xs font-semibold uppercase tracking-wider">
+                          {tier === "minimum" ? "Минимальные" : "Рекомендуемые"}
+                        </p>
+                        <dl className="mt-4 space-y-3 text-sm">
+                          {SYSREQ_ROWS.map(({ key, label }) => {
+                            const value = rows[key];
+                            if (!value) return null;
+                            return (
+                              <div
+                                key={key}
+                                className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4"
+                              >
+                                <dt className="text-muted-foreground shrink-0">
+                                  {label}
+                                </dt>
+                                <dd className="font-medium sm:text-right">
+                                  {value}
+                                </dd>
+                              </div>
+                            );
+                          })}
+                        </dl>
+                      </div>
+                    );
+                  })}
+                </div>
               </section>
             ) : null}
 
@@ -256,6 +325,7 @@ export default async function ProductPage({ params }: { params: Params }) {
                 items={product.related}
                 columnsClass="grid-cols-2 sm:grid-cols-3 lg:grid-cols-4"
                 sizes="(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
+                logoUrl={logoUrl}
               />
             </div>
           </section>

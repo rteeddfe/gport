@@ -8,7 +8,13 @@ export function useSignUp() {
   const queryClient = useQueryClient();
   const mutation = useMutation({
     mutationFn: signUp,
-    onSuccess: ({ user }) => queryClient.setQueryData(ME_QUERY_KEY, user),
+    onSuccess: (result) => {
+      // A verification-required claim returns no user — the form shows
+      // the code step instead of a session.
+      if ("user" in result) {
+        queryClient.setQueryData(ME_QUERY_KEY, result.user);
+      }
+    },
   });
 
   return {

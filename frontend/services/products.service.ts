@@ -19,13 +19,14 @@ export interface FindProductsParams {
   categoryId?: string;
   categorySlug?: string;
   search?: string;
-  region?: string;
   platform?: string;
   genre?: string;
+  /** «Только со скидкой» — sent as sale=1. */
+  sale?: boolean | "1" | "true";
   priceMin?: number;
   priceMax?: number;
-  /** Backend ProductSort: `new` | `price_asc` | `price_desc`. */
-  sort?: "new" | "price_asc" | "price_desc";
+  /** Backend ProductSort: `popular` | `new` | `price_asc` | `price_desc` | `discount`. */
+  sort?: "popular" | "new" | "price_asc" | "price_desc" | "discount";
 }
 
 export function getProducts(params: FindProductsParams = {}): Promise<Paginated<Product>> {
@@ -58,14 +59,24 @@ export interface AdminProductInput {
   slug?: string;
   description?: string;
   instruction?: string;
-  region?: string;
+  /** Catalog platform facet: steam | playstation | xbox | nintendo. */
   platform?: string;
   genre?: string[];
-  localization?: string;
-  ageRating?: string;
   images?: string[];
   priceCents: number;
   oldPriceCents?: number | null;
+  cashbackPercent?: number;
+  releaseYear?: number | null;
+  rating?: number | null;
+  consoles?: string[];
+  tags?: string[];
+  /** Subscription service one-liner. */
+  tagline?: string | null;
+  /** Subscription group: gaming | ai | media | social. */
+  group?: string | null;
+  features?: string[];
+  searchAliases?: string[];
+  systemRequirements?: Record<string, unknown> | null;
   stock: number;
   status?: ProductStatus;
   kind?: ProductKind;
@@ -85,8 +96,12 @@ export function adminGetProducts(params: FindProductsParams = {}): Promise<Pagin
   return apiFetch<Paginated<Product>>(`/admin/products${buildQuery({ ...params })}`);
 }
 
-export function adminGetProduct(id: string): Promise<Product> {
-  return apiFetch<Product>(`/admin/products/${id}`);
+/** Admin single product — findOne returns the FAQ list alongside
+ * (the public detail adds `related` instead). */
+export type AdminProduct = Product & { faq: ProductFaqItem[] };
+
+export function adminGetProduct(id: string): Promise<AdminProduct> {
+  return apiFetch<AdminProduct>(`/admin/products/${id}`);
 }
 
 export function adminCreateProduct(input: AdminProductInput): Promise<Product> {
@@ -122,15 +137,6 @@ export function adminReplaceProductKeys(
   return apiFetch<{ ok: true }, { keys: string[] }>(
     `/admin/products/${id}/keys`,
     { method: "PUT", body: { keys } },
-  );
-}
-
-/** Per-product FAQ (admin, ordered). */
-export function adminGetProductFaq(
-  id: string,
-): Promise<{ id: string; question: string; answer: string }[]> {
-  return apiFetch<{ id: string; question: string; answer: string }[]>(
-    `/admin/products/${id}/faq`,
   );
 }
 

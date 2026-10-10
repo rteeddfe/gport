@@ -6,6 +6,21 @@ import {
 import { Role, type User } from '../generated/prisma/client.js';
 import type { AdminPermission } from '../common/constants/admin-permissions.js';
 import { PrismaService } from '../database/prisma.service.js';
+import {
+  AUDIT_ACTIONS,
+  AUDIT_ENTITY_TYPES,
+  AuditService,
+} from '../audit/audit.service.js';
+import type {
+  AuditActor,
+  AuditRequestContext,
+} from '../audit/audit.types.js';
+
+/** Trusted audit context of an admin mutation (see IntegrationsService). */
+interface MutationAuditContext {
+  actor: AuditActor;
+  request?: AuditRequestContext;
+}
 
 export interface CreateUserInput {
   email: string;
@@ -59,7 +74,10 @@ function toView(user: User): AdminUserView {
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditService,
+  ) {}
 
   findById(id: string): Promise<User | null> {
     return this.prisma.user.findUnique({ where: { id } });
@@ -122,6 +140,7 @@ export class UsersService {
     id: string,
     dto: { role?: Role; permissions?: AdminPermission[] },
     actorId: string,
+    audit: MutationAuditContext,
   ): Promise<AdminUserView> {
     const user = await this.findById(id);
     if (!user) {
@@ -133,14 +152,35 @@ export class UsersService {
     if (dto.role !== undefined && id === actorId) {
       throw new BadRequestException('You cannot change your own role');
     }
-    const updated = await this.prisma.user.update({
-      where: { id },
-      data: { role: dto.role, permissions: dto.permissions },
+    const changedFields = [
+      ...(dto.role !== undefined ? ['role'] : []),
+      ...(dto.permissions !== undefined ? ['permissions'] : []),
+    ];
+    // Mutation + audit commit atomically (M-AUDIT-1): an access change can
+    // never land without its audit trail.
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updatedUser = await tx.user.update({
+        where: { id },
+        data: { role: dto.role, permissions: dto.permissions },
+      });
+      await this.auditService.logInTransaction(tx, {
+        actor: audit.actor,
+        action: AUDIT_ACTIONS.USER_ACCESS_UPDATED,
+        entityType: AUDIT_ENTITY_TYPES.USER,
+        entityId: id,
+        metadata: { changedFields },
+        request: audit.request,
+      });
+      return updatedUser;
     });
     return toView(updated);
   }
 
-  async remove(id: string, actorId: string): Promise<void> {
+  async remove(
+    id: string,
+    actorId: string,
+    audit: MutationAuditContext,
+  ): Promise<void> {
     const user = await this.findById(id);
     if (!user) {
       throw new NotFoundException('User not found');
@@ -152,30 +192,64 @@ export class UsersService {
       throw new BadRequestException('SUPER_ADMIN accounts cannot be deleted');
     }
     // Cart and refresh tokens cascade with the user; posts and reviews
-    // have no author relation.
-    await this.prisma.user.delete({ where: { id } });
+    // have no author relation. Audit records survive (SetNull).
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.delete({ where: { id } });
+      await this.auditService.logInTransaction(tx, {
+        actor: audit.actor,
+        action: AUDIT_ACTIONS.USER_DELETED,
+        entityType: AUDIT_ENTITY_TYPES.USER,
+        entityId: id,
+        metadata: { email: user.email, role: user.role },
+        request: audit.request,
+      });
+    });
   }
 
   /** Revokes every active session (refresh token) of the user — they are
    * signed out everywhere once their access token expires (≤15 min). */
-  async revokeAllSessions(id: string): Promise<void> {
+  async revokeAllSessions(id: string, audit: MutationAuditContext): Promise<void> {
     const user = await this.findById(id);
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    await this.prisma.refreshToken.updateMany({
-      where: { userId: id, revokedAt: null },
-      data: { revokedAt: new Date() },
+    await this.prisma.$transaction(async (tx) => {
+      const result = await tx.refreshToken.updateMany({
+        where: { userId: id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      await this.auditService.logInTransaction(tx, {
+        actor: audit.actor,
+        action: AUDIT_ACTIONS.USER_SESSIONS_REVOKED,
+        entityType: AUDIT_ENTITY_TYPES.USER,
+        entityId: id,
+        metadata: { revokedCount: result.count },
+        request: audit.request,
+      });
     });
   }
 
-  async revokeSession(id: string, sessionId: string): Promise<void> {
-    const result = await this.prisma.refreshToken.updateMany({
-      where: { id: sessionId, userId: id, revokedAt: null },
-      data: { revokedAt: new Date() },
+  async revokeSession(
+    id: string,
+    sessionId: string,
+    audit: MutationAuditContext,
+  ): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const revoked = await tx.refreshToken.updateMany({
+        where: { id: sessionId, userId: id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      if (revoked.count === 0) {
+        throw new NotFoundException('Session not found or already revoked');
+      }
+      await this.auditService.logInTransaction(tx, {
+        actor: audit.actor,
+        action: AUDIT_ACTIONS.USER_SESSION_REVOKED,
+        entityType: AUDIT_ENTITY_TYPES.USER,
+        entityId: id,
+        metadata: { sessionId },
+        request: audit.request,
+      });
     });
-    if (result.count === 0) {
-      throw new NotFoundException('Session not found or already revoked');
-    }
   }
 }

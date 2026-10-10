@@ -366,8 +366,7 @@ glow. No bouncy/springy motion.
   neon backdrop (three radial washes + three drifting `blur-2xl` blobs,
   `blob-drift` keyframes, disabled under `prefers-reduced-motion`) kept;
   the glass stub is replaced with real content: h1 «Пополнение игр и
-  сервисов», the six `SERVICES` (extracted to
-  `features/home/services-data.tsx`, shared with the home wall) as a
+  сервисов», the six `SERVICES` as a
   `.service-wall` strip — same monochrome→color hover CSS, tiles are
   presentational divs (no per-service flow exists) — and the real
   `game-currency` products from the API in a 6-col `ProductRevealGrid`
@@ -395,20 +394,6 @@ glow. No bouncy/springy motion.
   `schemas/review.schema.ts` (rating 1–5 star radio buttons, name
   optional, text ≥10), NO submission API — a valid submit just resets and
   closes, the caption says the server send arrives with the reviews API.
-- **Stats + socials (home, 2026-10-03)** — `community-section.tsx`
-  before the news block, from the user's reference screenshot translated
-  into our palette: two `min-h-64` gradient stat cards (cyan wash / violet
-  wash, uppercase badge pills «Количество клиентов:» / «Количество
-  пополнений:», «Более 136 684 довольных клиентов» / «Свыше 1 088 276
-  успешных пополнений» with the big `text-gradient` number, faint rotated
-  decorative squares) and a wide «Наши социальные сети» card — Telegram
-  @gport and GPort Official (VK) columns, each with a brand-colored icon
-  tile (`telegram.svg` white mark on #229ED9; new
-  `public/brands/vk-white.svg` on #0077FF), a description, a «10 000+ /
-  1 900+ регулярных юзеров» pill and an outline shadcn Button
-  «Подписаться» → t.me/gport / vk.com/gport (placeholders, same as the
-  footer). Numbers are static placeholders — no aggregate endpoints;
-  move behind services/*.service.ts when a stats source is approved.
 - **News + FAQ (home, 2026-10-03)** — News: «Все новости» text + ArrowRight
   link sits right of the heading in a `flex items-end justify-between` row
   (href `#news` anchor until a news page exists). FAQ: filter chips Все /
@@ -431,9 +416,8 @@ glow. No bouncy/springy motion.
   igromir.yandex.ru constructor in our style; the payment business process
   is not approved — a valid pay click shows the cyan "платёжный провайдер
   не подключён" hint. The shared top-up modules:
-  `features/topup/widget-data.ts` (TOPUP_SERVICES = widget-only Steam +
-  the shared SERVICES with «от {priceFrom}», countries, fee 0.06),
-  `hooks/use-topup-widget.ts` (RHF + Zod over `schemas/topup.schema.ts`:
+  `features/topup/widget-data.ts` (TOPUP_SERVICES = widget-only Steam,
+  countries, fee 0.06),  `hooks/use-topup-widget.ts` (RHF + Zod over `schemas/topup.schema.ts`:
   login ≥3, amount digits 50–15000, promo optional; selected service;
   mirrored amount string for the live total = ceil(amount × 1.06) —
   `form.watch` would bail the React Compiler; submit reveals the

@@ -14,7 +14,13 @@ describe('Health (e2e)', () => {
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(PrismaService)
-      .useValue({ $queryRaw: async () => [{ '?column?': 1 }] })
+      .useValue({
+        $queryRaw: async () => [{ '?column?': 1 }],
+        // TrafficService reads the ban list + security settings on the
+        // first request through the global traffic middleware.
+        blockedIp: { findMany: async () => [] },
+        securitySettings: { findUnique: async () => null },
+      })
       .compile();
 
     app = moduleRef.createNestApplication();

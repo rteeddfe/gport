@@ -1,5 +1,5 @@
 import { apiFetch } from "@/lib/api/client";
-import type { AuthResponse, AuthUser } from "@/types/api";
+import type { AuthResponse, AuthUser, RegisterResponse } from "@/types/api";
 
 export function signIn(body: { email: string; password: string }): Promise<AuthResponse> {
   return apiFetch<AuthResponse>("/auth/login", { method: "POST", body });
@@ -9,8 +9,27 @@ export function signUp(body: {
   email: string;
   password: string;
   name?: string;
+}): Promise<RegisterResponse> {
+  return apiFetch<RegisterResponse>("/auth/register", { method: "POST", body });
+}
+
+/** Second step of claiming a guest-checkout account: the code that was
+ * mailed to the address. On success the session cookies are set. */
+export function verifyRegister(body: {
+  email: string;
+  code: string;
 }): Promise<AuthResponse> {
-  return apiFetch<AuthResponse>("/auth/register", { method: "POST", body });
+  return apiFetch<AuthResponse>("/auth/register/verify", { method: "POST", body });
+}
+
+/** Completes OAuth linking (M-OAUTH-4): the mailed code + the opaque
+ * challenge id from the backend redirect. On success the session cookies
+ * are set. */
+export function verifyOAuthLink(body: {
+  challengeId: string;
+  code: string;
+}): Promise<AuthResponse> {
+  return apiFetch<AuthResponse>("/auth/oauth/link/verify", { method: "POST", body });
 }
 
 export function signOut(): Promise<void> {

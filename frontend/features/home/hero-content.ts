@@ -2,13 +2,19 @@
  * Hero content contract, shared by the desktop hero banner and the
  * mobile first-screen preview (/design/hero-mobile). Texts are managed
  * from the admin panel (GET /home-content); carouselCards are the hero
- * cylinder's image+link cards (empty = built-in placeholder covers).
+ * cylinder's image+link cards. Everything is optional — empty fields do
+ * not render (the store ships blank; the fallback below is the API-down
+ * placeholder, equally blank).
  */
 export interface HeroBannerContent {
   kicker: string;
   title: string;
   titleAccent: string;
   subtitle: string;
+  /** Primary CTA (filled style, wallet icon); empty = button hidden. */
+  ctaPrimaryLabel: string;
+  ctaPrimaryHref: string;
+  /** Secondary CTA (outline style, gamepad icon); empty = hidden. */
   ctaLabel: string;
   ctaHref: string;
   tiles: string[];
@@ -16,17 +22,14 @@ export interface HeroBannerContent {
 }
 
 export const HERO_DEFAULT_CONTENT: HeroBannerContent = {
-  kicker: "Пополнение сервисов",
-  title: "Пополняй любимые игры",
-  titleAccent: "по выгодному курсу",
+  kicker: "",
+  title: "",
+  titleAccent: "",
   subtitle: "",
-  ctaLabel: "Каталог игр",
-  ctaHref: "/products",
-  tiles: [
-    "Без ограничений, регистрации и верификации",
-    "Без скрытых комиссий и платежей",
-    "Моментальная доставка после оплаты",
-    "Много способов оплаты",
-  ],
+  ctaPrimaryLabel: "",
+  ctaPrimaryHref: "",
+  ctaLabel: "",
+  ctaHref: "",
+  tiles: [],
   carouselCards: [],
 };

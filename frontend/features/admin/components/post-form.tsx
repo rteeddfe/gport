@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { RichTextEditor } from "@/features/settings/components/rich-text-editor";
 import { useAdminPostMutations } from "../hooks/use-admin-posts";
 import { PostCoverField } from "./post-cover-field";
 import { postSchema, type PostFormValues } from "@/schemas/post.schema";
@@ -69,11 +70,16 @@ export function PostForm({ post }: PostFormProps) {
 
   async function onSubmit(values: PostFormValues) {
     setError(null);
+    // An untouched Tiptap document is «<p></p>» — treat it as no text so
+    // the storefront keeps its «текст скоро появится» empty state.
+    const trimmedContent = values.content.trim();
+    const content =
+      trimmedContent === "<p></p>" ? undefined : trimmedContent || undefined;
     const input = {
       title: values.title,
       slug: values.slug || undefined,
       excerpt: values.excerpt.trim() || undefined,
-      content: values.content.trim() || undefined,
+      content,
       coverImageUrl: values.coverImageUrl || null,
       status: values.status,
     };
@@ -83,7 +89,7 @@ export function PostForm({ post }: PostFormProps) {
       } else {
         await create.mutateAsync(input);
       }
-      router.push("/admin/posts");
+      router.push("/admin/blog");
       router.refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Ошибка");
@@ -160,13 +166,13 @@ export function PostForm({ post }: PostFormProps) {
             <p className="text-destructive text-xs">{errors.excerpt.message}</p>
           ) : null}
         </div>
+        {/* Same Tiptap editor as the legal docs in settings — the backend
+            sanitizes the HTML against a whitelist before it is stored. */}
         <div className="space-y-1.5">
-          <Label htmlFor="content">Текст новости</Label>
-          <Textarea
-            id="content"
-            rows={14}
-            placeholder="Текст новости. Абзацы разделяйте переносом строки."
-            {...form.register("content")}
+          <Label>Текст новости</Label>
+          <RichTextEditor
+            value={form.watch("content")}
+            onChange={(html) => form.setValue("content", html)}
           />
           {errors.content ? (
             <p className="text-destructive text-xs">{errors.content.message}</p>

@@ -5,7 +5,7 @@ import { z } from "zod";
  * the permission list is replaced as a whole on save. */
 export const userAccessSchema = z.object({
   role: z.enum(["USER", "ADMIN"]),
-  permissions: z.array(z.enum(["products", "orders", "files", "posts", "reviews", "promo-codes", "support"])),
+  permissions: z.array(z.enum(["products", "orders", "files", "posts", "reviews", "promo-codes", "support", "integrations"])),
 });
 
 export type UserAccessValues = z.infer<typeof userAccessSchema>;

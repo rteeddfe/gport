@@ -15,9 +15,7 @@ import { RateLimit } from '../common/guards/rate-limit.guard.js';
 import type { Request, Response } from 'express';
 import {
   ACCESS_TOKEN_COOKIE,
-  ACCESS_TOKEN_TTL_SECONDS,
   REFRESH_TOKEN_COOKIE,
-  REFRESH_TOKEN_TTL_SECONDS,
 } from '../common/constants/auth-cookies.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import { Public } from '../common/decorators/public.decorator.js';
@@ -25,13 +23,13 @@ import type { AuthUser } from '../common/types/auth-user.js';
 import {
   parseCookie,
   serializeExpiredCookie,
-  serializeSessionCookie,
-  type CookieSameSite,
 } from '../common/utils/cookies.js';
 import { AuthService, type AuthResult } from './auth.service.js';
+import { sessionCookieOptions, setSessionCookies } from './session-cookies.js';
 import { ChangePasswordDto } from './dto/change-password.dto.js';
 import { LoginDto } from './dto/login.dto.js';
 import { RegisterDto } from './dto/register.dto.js';
+import { VerifyRegisterDto } from './dto/register.dto.js';
 import { UpdateProfileDto } from './dto/update-profile.dto.js';
 
 
@@ -55,9 +53,29 @@ export class AuthController {
   async register(
     @Body() dto: RegisterDto,
     @Res({ passthrough: true }) response: Response,
-  ): Promise<SessionResponse> {
+  ): Promise<SessionResponse | { verificationRequired: true }> {
     const result = await this.authService.register(dto);
-    this.setSessionCookies(response, result);
+    // Claiming a passwordless (guest-checkout) account parks on a mailed
+    // code first — no cookies, no password change until verification.
+    if ('verificationRequired' in result) {
+      return result;
+    }
+    this.applySessionCookies(response, result);
+    return { user: result.user };
+  }
+
+  /** Completes a passwordless-account claim after the mailed code. On
+   * success the account gets its password and a normal session. */
+  @Public()
+  @Post('register/verify')
+  @HttpCode(HttpStatus.OK)
+  @RateLimit({ limit: 5, ttlMs: 60_000 })
+  async verifyRegister(
+    @Body() dto: VerifyRegisterDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<SessionResponse> {
+    const result = await this.authService.verifyRegister(dto);
+    this.applySessionCookies(response, result);
     return { user: result.user };
   }
 
@@ -70,7 +88,7 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ): Promise<SessionResponse> {
     const result = await this.authService.login(dto);
-    this.setSessionCookies(response, result);
+    this.applySessionCookies(response, result);
     return { user: result.user };
   }
 
@@ -86,7 +104,7 @@ export class AuthController {
     const result = await this.authService.refreshSession(
       parseCookie(request.headers.cookie, REFRESH_TOKEN_COOKIE),
     );
-    this.setSessionCookies(response, result);
+    this.applySessionCookies(response, result);
     return { user: result.user };
   }
 
@@ -101,9 +119,13 @@ export class AuthController {
     await this.authService.revokeSession(
       parseCookie(request.headers.cookie, REFRESH_TOKEN_COOKIE),
     );
+    const sameSite = sessionCookieOptions(
+      this.configService,
+      this.configService.get<string>('NODE_ENV'),
+    ).sameSite;
     response.setHeader('Set-Cookie', [
-      serializeExpiredCookie(ACCESS_TOKEN_COOKIE, this.cookieSameSite()),
-      serializeExpiredCookie(REFRESH_TOKEN_COOKIE, this.cookieSameSite()),
+      serializeExpiredCookie(ACCESS_TOKEN_COOKIE, sameSite),
+      serializeExpiredCookie(REFRESH_TOKEN_COOKIE, sameSite),
     ]);
   }
 
@@ -140,29 +162,13 @@ export class AuthController {
     );
   }
 
-  /** httpOnly SameSite cookies (from COOKIE_SAME_SITE, default Lax);
-   * Secure added behind TLS (production) and always with SameSite=None. */
-  private cookieSameSite(): CookieSameSite {
-    return this.configService.get<CookieSameSite>('cookieSameSite') ?? 'Lax';
-  }
-
-  private setSessionCookies(response: Response, result: AuthResult): void {
-    const secure =
-      this.configService.get<string>('NODE_ENV') === 'production';
-    const sameSite = this.cookieSameSite();
-    response.setHeader('Set-Cookie', [
-      serializeSessionCookie(
-        ACCESS_TOKEN_COOKIE,
-        result.accessToken,
-        ACCESS_TOKEN_TTL_SECONDS,
-        { secure, sameSite },
-      ),
-      serializeSessionCookie(
-        REFRESH_TOKEN_COOKIE,
-        result.refreshToken,
-        REFRESH_TOKEN_TTL_SECONDS,
-        { secure, sameSite },
-      ),
-    ]);
+  /** Same flags as the OAuth callback — one shared implementation. */
+  private applySessionCookies(response: Response, result: AuthResult): void {
+    setSessionCookies(
+      response,
+      result,
+      sessionCookieOptions(this.configService, this.configService.get<string>('NODE_ENV')),
+    );
   }
 }
+

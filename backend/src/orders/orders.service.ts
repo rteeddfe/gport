@@ -3,6 +3,7 @@ import { OrderStatus, Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { MailService } from '../payments/mail.service.js';
 import { PaymentsService } from '../payments/payments.service.js';
+import { PromoCodesService } from '../promo-codes/promo-codes.service.js';
 import type { CreateOrderDto } from './dto/create-order.dto.js';
 
 const ORDER_INCLUDE = {
@@ -13,6 +14,13 @@ const ORDER_INCLUDE = {
     },
   },
 } satisfies Prisma.OrderInclude;
+
+/** An unpaid GAME_KEY order holds its stock reservation until the buyer
+ * completes or cancels the payment. Abandoned checkouts never send a
+ * webhook, so the reservation is released lazily: the next order of the
+ * same product claims every AWAITING_PAYMENT order older than this TTL
+ * as CANCELLED and returns their units to stock. */
+const STALE_RESERVATION_TTL_MS = 30 * 60_000;
 
 const ADMIN_ORDER_INCLUDE = {
   ...ORDER_INCLUDE,
@@ -47,6 +55,9 @@ export interface OrderView {
   id: string;
   status: OrderStatus;
   totalCents: number;
+  /** Applied promo snapshot (null when the order had no promo). */
+  promoCode: string | null;
+  discountCents: number;
   currency: string;
   provider: string;
   createdAt: Date;
@@ -72,6 +83,8 @@ function toView(order: Prisma.OrderGetPayload<{ include: typeof ORDER_INCLUDE }>
     id: order.id,
     status: order.status,
     totalCents: order.totalCents,
+    promoCode: order.promoCode,
+    discountCents: order.discountCents,
     currency: order.currency,
     provider: order.provider,
     createdAt: order.createdAt,
@@ -118,6 +131,7 @@ export class OrdersService {
     private readonly prisma: PrismaService,
     private readonly paymentsService: PaymentsService,
     private readonly mail: MailService,
+    private readonly promoCodesService: PromoCodesService,
   ) {}
 
   /** Direct checkout, works for signed-in users AND guests (email-only:
@@ -224,42 +238,113 @@ export class OrdersService {
       // The service commission is charged on top of the credited amount
       // (percent is a product property, 0 = no fee) and snapshot here so
       // the receipt can show both lines later.
+      // The service commission is charged on top of the credited amount
+      // (percent is a product property, 0 = no fee) and snapshot here so
+      // the receipt can show both lines later.
       commissionCents = Math.round(
         (dto.amountCents * (product.commissionPercent ?? 0)) / 100,
       );
       unitPriceCents = dto.amountCents + commissionCents;
       amountCents = dto.amountCents;
       quantity = 1;
-    } else if (product.stock < quantity) {
-      throw new BadRequestException('Недостаточно товара в наличии');
     }
     if (!(await this.paymentsService.isEnabled(dto.provider))) {
       throw new BadRequestException('Способ оплаты недоступен');
     }
 
-    const totalCents = unitPriceCents * quantity;
-    const order = await this.prisma.order.create({
-      data: {
-        userId: ownerId,
-        email,
-        provider: dto.provider,
-        totalCents,
-        items: {
-          create: [
-            {
-              productId: product.id,
-              productTitle: product.title,
-              unitPriceCents,
-              quantity,
-              variantLabel,
-              amountCents,
-              commissionCents,
-              accountIdentifier: dto.accountIdentifier?.trim() ?? null,
-            },
-          ],
+    // Promo codes price against the full order subtotal (commission and
+    // quantity included); an invalid code fails the request so the buyer
+    // never pays the undiscounted price by surprise. resolveForCheckout
+    // is UX validation only — the authoritative maxUses enforcement is
+    // the atomic conditional consume inside the order transaction below.
+    const subtotalCents = unitPriceCents * quantity;
+    let discountCents = 0;
+    let appliedPromo: {
+      id: string;
+      code: string;
+      maxUses: number | null;
+    } | null = null;
+    if (dto.promoCode?.trim()) {
+      const resolved = await this.promoCodesService.resolveForCheckout(
+        dto.promoCode,
+        subtotalCents,
+      );
+      discountCents = resolved.discountCents;
+      appliedPromo = {
+        id: resolved.promo.id,
+        code: resolved.promo.code,
+        maxUses: resolved.promo.maxUses,
+      };
+    }
+    const totalCents = subtotalCents - discountCents;
+    // A GAME_KEY order RESERVES stock at creation: the conditional
+    // decrement (`WHERE stock >= quantity`) is one database-level
+    // check+write, so two concurrent orders can never claim the same
+    // unit — the loser fails cleanly instead of paying for nothing.
+    // Top-ups are unbounded and need no reservation. The reservation is
+    // released on the cancel webhook and lazily (next order of the same
+    // product) for abandoned checkouts — see STALE_RESERVATION_TTL_MS.
+    const isKeyOrder = product.kind === 'GAME_KEY';
+    const order = await this.prisma.$transaction(async (tx) => {
+      if (isKeyOrder) {
+        await this.releaseStaleReservations(tx, product.id);
+        const reserved = await tx.product.updateMany({
+          where: { id: product.id, stock: { gte: quantity } },
+          data: { stock: { decrement: quantity } },
+        });
+        if (reserved.count === 0) {
+          throw new BadRequestException('Недостаточно товара в наличии');
+        }
+      }
+      if (appliedPromo) {
+        // Authoritative promo consume: check (usedCount < maxUses) and
+        // increment are ONE statement — the ReadCommitted row lock makes
+        // two concurrent orders serialize, the loser sees count 0 and the
+        // whole transaction rolls back (no order, no usage). The
+        // maxUses bound comes from the validation snapshot: an admin
+        // lowering it mid-request is benign (old bound applies for the
+        // in-flight request); Prisma cannot compare two columns of the
+        // same row in a where, so the value rides from validation.
+        const consumed = await tx.promoCode.updateMany({
+          where: {
+            id: appliedPromo.id,
+            isActive: true,
+            ...(appliedPromo.maxUses === null
+              ? {}
+              : { usedCount: { lt: appliedPromo.maxUses } }),
+          },
+          data: { usedCount: { increment: 1 } },
+        });
+        if (consumed.count === 0) {
+          throw new BadRequestException('Промокод недействителен или истёк');
+        }
+      }
+      return tx.order.create({
+        data: {
+          userId: ownerId,
+          email,
+          provider: dto.provider,
+          totalCents,
+          promoCodeId: appliedPromo?.id,
+          promoCode: appliedPromo?.code ?? null,
+          discountCents,
+          items: {
+            create: [
+              {
+                productId: product.id,
+                productTitle: product.title,
+                unitPriceCents,
+                quantity,
+                variantLabel,
+                amountCents,
+                commissionCents,
+                accountIdentifier: dto.accountIdentifier?.trim() ?? null,
+              },
+            ],
+          },
         },
-      },
-      include: ORDER_INCLUDE,
+        include: ORDER_INCLUDE,
+      });
     });
 
     const { redirectUrl } = await this.paymentsService.createPaymentSession(order);
@@ -280,11 +365,57 @@ export class OrdersService {
               : head;
           })
           .join('\n') +
-        `\n\nИтого: ${(totalCents / 100).toLocaleString('ru-RU')} ₽\n` +
+        (discountCents > 0
+          ? `\n\nПромокод ${appliedPromo?.code}: −${(discountCents / 100).toLocaleString('ru-RU')} ₽\nИтого: ${(totalCents / 100).toLocaleString('ru-RU')} ₽\n`
+          : `\n\nИтого: ${(totalCents / 100).toLocaleString('ru-RU')} ₽\n`) +
         `Оплатить: ${redirectUrl}`,
     });
 
     return { ...toView(order), redirectUrl };
+  }
+
+  /** Frees the units held by abandoned checkouts of one product: each
+   * AWAITING_PAYMENT order past the TTL is claimed as CANCELLED with a
+   * per-row conditional update (the loser of a concurrent claim sees
+   * count 0 and releases nothing), then its reserved units are returned
+   * to stock. Runs inside the order-creation transaction. */
+  private async releaseStaleReservations(
+    tx: Prisma.TransactionClient,
+    productId: string,
+  ): Promise<void> {
+    const staleCutoff = new Date(Date.now() - STALE_RESERVATION_TTL_MS);
+    const stale = await tx.order.findMany({
+      where: {
+        status: OrderStatus.AWAITING_PAYMENT,
+        createdAt: { lt: staleCutoff },
+        items: { some: { productId } },
+      },
+      select: {
+        id: true,
+        items: {
+          select: { quantity: true, product: { select: { creditingMode: true } } },
+        },
+      },
+    });
+    for (const abandoned of stale) {
+      const claimed = await tx.order.updateMany({
+        where: { id: abandoned.id, status: OrderStatus.AWAITING_PAYMENT },
+        data: { status: OrderStatus.CANCELLED },
+      });
+      if (claimed.count === 0) {
+        // A concurrent creation already claimed this reservation.
+        continue;
+      }
+      const reservedQty = abandoned.items
+        .filter((item) => item.product.creditingMode === 'AUTO_CODE')
+        .reduce((sum, item) => sum + item.quantity, 0);
+      if (reservedQty > 0) {
+        await tx.product.update({
+          where: { id: productId },
+          data: { stock: { increment: reservedQty } },
+        });
+      }
+    }
   }
 
   async findMy(userId: string): Promise<OrderView[]> {

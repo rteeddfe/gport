@@ -1,11 +1,25 @@
 import { apiFetch } from "@/lib/api/client";
-import type { SiteSettings, SocialLink } from "@/types/api";
+import type {
+  FooterMenu,
+  HeaderMenuItem,
+  SiteSettings,
+  SocialLink,
+} from "@/types/api";
 
 export interface UpdateSiteSettingsInput {
   siteName: string;
+  descriptor: string;
+  descriptorFooter: string;
   supportEmail: string;
+  legalName: string;
+  legalInn: string;
+  legalOgrn: string;
+  legalAddress: string;
+  legalPhone: string;
   logoUrl: string;
   socials: SocialLink[];
+  headerMenu: HeaderMenuItem[];
+  footerMenus: FooterMenu[];
   seoTitle: string;
   seoDescription: string;
   ogImageUrl?: string | null;
@@ -35,4 +49,14 @@ export function updateSettings(
     method: "PUT",
     body: input,
   });
+}
+
+/** The settings logo for card/gallery fallbacks (empty = gradient-only
+ * fallback without a logo). */
+export async function getFallbackLogo(): Promise<string> {
+  try {
+    return (await getSettings()).logoUrl ?? "";
+  } catch {
+    return "";
+  }
 }

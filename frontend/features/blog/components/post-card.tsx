@@ -6,11 +6,11 @@ import type { Post } from "@/types/api";
 
 /**
  * Blog card for /blog and the homepage news block: horizontal cover
- * (16:9) with the store logo on a neon wash as the fallback (no letter —
- * a post without art still reads as GPort), date, title and lead. Whole
- * card links to the post page; hover = lift + brand glow (CSS only).
+ * (16:9) with the settings logo on a neon wash as the fallback (empty
+ * logo = wash only), date, title and lead. Whole card links to the post
+ * page; hover = lift + brand glow (CSS only).
  */
-export function PostCard({ post }: { post: Post }) {
+export function PostCard({ post, logoUrl = "" }: { post: Post; logoUrl?: string }) {
   const cover = post.coverImageUrl;
 
   return (
@@ -32,13 +32,16 @@ export function PostCard({ post }: { post: Post }) {
             aria-hidden
             className="absolute inset-0 grid place-items-center bg-[radial-gradient(16rem_12rem_at_50%_20%,rgb(139_92_246/0.25),transparent_70%),radial-gradient(12rem_10rem_at_80%_90%,rgb(85_221_229/0.15),transparent_70%)]"
           >
-            <Image
-              src="/logo2.png"
-              alt=""
-              width={2400}
-              height={1569}
-              className="relative h-14 w-auto opacity-90"
-            />
+            {logoUrl ? (
+              <Image
+                src={logoUrl}
+                alt=""
+                width={2400}
+                height={1569}
+                unoptimized={logoUrl.toLowerCase().endsWith(".svg")}
+                className="relative h-14 w-auto object-contain opacity-90"
+              />
+            ) : null}
           </div>
         )}
       </div>

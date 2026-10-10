@@ -1,5 +1,6 @@
 "use client";
 
+import { getErrorMessage } from "@/lib/api/errors";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2, Plus, Save, Trash2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -59,10 +60,6 @@ function useFaqMutations() {
   return { create, update, remove };
 }
 
-function errorText(cause: unknown): string {
-  return cause instanceof Error ? cause.message : "Ошибка";
-}
-
 /** One editable FAQ card: PATCH on save, DELETE with a confirm step. */
 function FaqCard({ item }: { item: FaqItem }) {
   const { update, remove } = useFaqMutations();
@@ -87,7 +84,7 @@ function FaqCard({ item }: { item: FaqItem }) {
       await update.mutateAsync({ id: item.id, input: values });
       setSavedAt(new Date().toLocaleTimeString("ru-RU"));
     } catch (cause) {
-      setError(errorText(cause));
+      setError(getErrorMessage(cause));
     }
   }
 
@@ -99,7 +96,7 @@ function FaqCard({ item }: { item: FaqItem }) {
     try {
       await remove.mutateAsync(item.id);
     } catch (cause) {
-      setError(errorText(cause));
+      setError(getErrorMessage(cause));
       setConfirmDelete(false);
     }
   }
@@ -209,7 +206,7 @@ function NewFaqCard() {
       await create.mutateAsync(values);
       form.reset();
     } catch (cause) {
-      setError(errorText(cause));
+      setError(getErrorMessage(cause));
     }
   }
 

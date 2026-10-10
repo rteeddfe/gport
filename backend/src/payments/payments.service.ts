@@ -1,4 +1,4 @@
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import {
   BadRequestException,
   Injectable,
@@ -10,6 +10,13 @@ import { ConfigService } from '@nestjs/config';
 import { OrderStatus } from '../generated/prisma/client.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { MailService } from './mail.service.js';
+import {
+  AUDIT_ACTIONS,
+  AUDIT_ENTITY_TYPES,
+} from '../audit/audit.constants.js';
+import type { AuditActor } from '../audit/audit.types.js';
+import { AuditService } from '../audit/audit.service.js';
+import { PaymentProviderRegistry } from './payment-provider-registry.js';
 import {
   PAYMENT_PROVIDERS,
   type PaymentProviderMeta,
@@ -43,6 +50,10 @@ const DEV_WEBHOOK_SECRET = 'dev-test-acquiring-secret';
 /** The acquiring settings singleton row (never a second one). */
 const PAYMENT_SETTINGS_ID = 1;
 
+/** System actor for payment lifecycle events: webhooks and session opens
+ * are machine events, not user actions (M-AUDIT-1 actor model). */
+const SYSTEM_ACTOR: AuditActor = { id: null, role: null };
+
 @Injectable()
 export class PaymentsService {
   private readonly logger = new Logger(PaymentsService.name);
@@ -51,6 +62,8 @@ export class PaymentsService {
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
     private readonly mail: MailService,
+    private readonly auditService: AuditService,
+    private readonly providerRegistry: PaymentProviderRegistry,
   ) {}
 
   /** Self-healing read of the acquiring settings singleton. */
@@ -86,12 +99,13 @@ export class PaymentsService {
   }
 
   /** True when the provider can take orders right now: the test emulator
-   * needs its toggle; real acquirers additionally need their integration
-   * (only the emulator is live for now). */
+   * needs its toggle AND a non-production environment (an explicit
+   * PAYMENTS_ALLOW_TEST_EMULATOR=true re-enables it deliberately); real
+   * acquirers additionally need their integration. */
   async isEnabled(providerId: string): Promise<boolean> {
     const settings = await this.findSettings();
     if (providerId === 'test') {
-      return settings.testEnabled;
+      return settings.testEnabled && this.testEmulatorAllowed();
     }
     const meta = PAYMENT_PROVIDERS.find((p) => p.id === providerId);
     return meta?.live === true && settings.providers[providerId]?.enabled === true;
@@ -100,9 +114,10 @@ export class PaymentsService {
   /** Enabled providers for the public buy dialog. */
   async listEnabled(): Promise<{ id: string; name: string }[]> {
     const settings = await this.findSettings();
+    const testAllowed = this.testEmulatorAllowed();
     return PAYMENT_PROVIDERS.filter((meta) =>
       meta.id === 'test'
-        ? settings.testEnabled
+        ? settings.testEnabled && testAllowed
         : meta.live && settings.providers[meta.id]?.enabled === true,
     ).map(({ id, name }) => ({ id, name }));
   }
@@ -113,19 +128,27 @@ export class PaymentsService {
   async createPaymentSession(order: {
     id: string;
     provider: string;
+    totalCents: number;
+    currency: string;
+    email: string | null;
   }): Promise<{ redirectUrl: string }> {
-    if (order.provider !== 'test') {
-      // Real acquirers integrate here (create payment at their API,
-      // store their payment id, return their confirm URL).
+    const adapter = this.providerRegistry.get(order.provider);
+    if (!adapter) {
+      // Only registry-registered adapters are reachable — an unknown or
+      // unregistered provider id can never be selected by client input.
       throw new BadRequestException('Способ оплаты пока не подключён');
     }
-    const token = randomBytes(24).toString('base64url');
-    await this.prisma.order.update({
-      where: { id: order.id },
-      data: { paymentToken: token },
+    const result = await adapter.createPaymentSession(order);
+    // AuditService.log never throws (failures surface in the server logs
+    // with the action name only) — the session must not depend on it.
+    await this.auditService.log({
+      actor: SYSTEM_ACTOR,
+      action: AUDIT_ACTIONS.PAYMENT_CREATED,
+      entityType: AUDIT_ENTITY_TYPES.ORDER,
+      entityId: order.id,
+      metadata: { provider: order.provider },
     });
-    const origin = this.storefrontOrigin();
-    return { redirectUrl: `${origin}/pay/test/${token}` };
+    return { redirectUrl: result.redirectUrl };
   }
 
   /** Public data for the emulator page. The token is the capability —
@@ -161,6 +184,15 @@ export class PaymentsService {
       received.length !== expectedBuffer.length ||
       !timingSafeEqual(received, expectedBuffer)
     ) {
+      // The rejection is audited (safe reason only — no header/body values),
+      // then the caller gets a 401.
+      await this.auditService.log({
+        actor: SYSTEM_ACTOR,
+        action: AUDIT_ACTIONS.PAYMENT_WEBHOOK_REJECTED,
+        entityType: AUDIT_ENTITY_TYPES.ORDER,
+        entityId: dto.orderId,
+        metadata: { provider: 'test', reason: 'signature_mismatch' },
+      });
       throw new UnauthorizedException('Подпись вебхука неверна');
     }
 
@@ -178,6 +210,13 @@ export class PaymentsService {
       },
     });
     if (!order || order.paymentToken !== dto.paymentToken) {
+      await this.auditService.log({
+        actor: SYSTEM_ACTOR,
+        action: AUDIT_ACTIONS.PAYMENT_WEBHOOK_REJECTED,
+        entityType: AUDIT_ENTITY_TYPES.ORDER,
+        entityId: dto.orderId,
+        metadata: { provider: 'test', reason: 'order_or_token_mismatch' },
+      });
       throw new NotFoundException('Заказ не найден');
     }
     if (order.status !== OrderStatus.AWAITING_PAYMENT) {
@@ -186,11 +225,37 @@ export class PaymentsService {
     }
 
     if (dto.status === 'cancel') {
-      const cancelled = await this.prisma.order.updateMany({
-        where: { id: order.id, status: OrderStatus.AWAITING_PAYMENT },
-        data: { status: OrderStatus.CANCELLED },
+      // Cancel + stock release + audit commit or roll back together.
+      const cancelled = await this.prisma.$transaction(async (tx) => {
+        const claimed = await tx.order.updateMany({
+          where: { id: order.id, status: OrderStatus.AWAITING_PAYMENT },
+          data: { status: OrderStatus.CANCELLED },
+        });
+        if (claimed.count === 0) {
+          // A duplicate cancel lost the race — the earlier cancel already
+          // returned the reservation; no double-credit possible.
+          return null;
+        }
+        // The creation-time reservation is returned only by the winner of
+        // the claim, so a duplicate cancel can never double-credit stock.
+        for (const item of order.items) {
+          if (item.product.creditingMode === 'AUTO_CODE') {
+            await tx.product.update({
+              where: { id: item.productId },
+              data: { stock: { increment: item.quantity } },
+            });
+          }
+        }
+        await this.auditService.logInTransaction(tx, {
+          actor: SYSTEM_ACTOR,
+          action: AUDIT_ACTIONS.PAYMENT_CANCELED,
+          entityType: AUDIT_ENTITY_TYPES.ORDER,
+          entityId: order.id,
+          metadata: { provider: order.provider },
+        });
+        return { id: order.id };
       });
-      if (cancelled.count === 0) {
+      if (!cancelled) {
         return { ok: true, status: order.status };
       }
       return { ok: true, status: OrderStatus.CANCELLED };
@@ -198,7 +263,9 @@ export class PaymentsService {
 
     // The AWAITING_PAYMENT -> PAID transition is the fulfillment gate: the
     // conditional update claims the order atomically, so two concurrent
-    // webhooks can never double-issue keys or double-decrement stock.
+    // webhooks can never double-issue keys. Stock is NOT decremented
+    // here — the creation-time reservation already removed the units,
+    // and a re-decrement would double-charge the reserved stock.
     const fulfilled = await this.prisma.$transaction(async (tx) => {
       const claimed = await tx.order.updateMany({
         where: { id: order.id, status: OrderStatus.AWAITING_PAYMENT },
@@ -207,22 +274,37 @@ export class PaymentsService {
       if (claimed.count === 0) {
         return null;
       }
+      // The payment lifecycle event commits atomically with the order
+      // transition: a paid order can never exist without its audit row.
+      await this.auditService.logInTransaction(tx, {
+        actor: SYSTEM_ACTOR,
+        action: AUDIT_ACTIONS.PAYMENT_SUCCEEDED,
+        entityType: AUDIT_ENTITY_TYPES.ORDER,
+        entityId: order.id,
+        metadata: { provider: order.provider },
+      });
       for (const item of order.items) {
-        // AUTO_CODE products deliver from the key pool (stock = keys);
-        // MANUAL top-ups are fulfilled by the operator — no stock, no keys.
+        // AUTO_CODE products deliver from the key pool (the units were
+        // already reserved at order creation); MANUAL top-ups are
+        // fulfilled by the operator — no stock, no keys.
         if (item.product.creditingMode !== 'AUTO_CODE') {
           continue;
         }
-        await tx.product.update({
-          where: { id: item.productId },
-          data: { stock: { decrement: item.quantity } },
-        });
         const freeKeys = await tx.productKey.findMany({
           where: { productId: item.productId, isSold: false, orderItemId: null },
           orderBy: { createdAt: 'asc' },
           take: item.quantity,
           select: { id: true },
         });
+        if (freeKeys.length < item.quantity) {
+          // The reservation guaranteed availability at order creation; a
+          // shortfall now means keys were removed manually. There is no
+          // refund workflow yet — the paid order stays PAID and the gap
+          // is surfaced in the logs for operator handling.
+          this.logger.warn(
+            `Order ${order.id}: only ${freeKeys.length} of ${item.quantity} keys available for product ${item.productId}`,
+          );
+        }
         if (freeKeys.length > 0) {
           await tx.productKey.updateMany({
             where: { id: { in: freeKeys.map((key) => key.id) }, isSold: false },
@@ -318,12 +400,12 @@ export class PaymentsService {
       .digest('hex');
   }
 
-  private storefrontOrigin(): string {
-    const configured = this.configService.get<string>('storefrontOrigin');
-    if (configured) {
-      return configured;
+  /** The emulator is a test-only way to pay: production refuses it unless
+   * PAYMENTS_ALLOW_TEST_EMULATOR=true is set explicitly (M-PAYMENTS-1 §8). */
+  private testEmulatorAllowed(): boolean {
+    if (process.env.NODE_ENV !== 'production') {
+      return true;
     }
-    const origins = this.configService.get<string[]>('corsOrigins') ?? [];
-    return origins[0] ?? 'http://localhost:3000';
+    return this.configService.get<boolean>('paymentsAllowTestEmulator') === true;
   }
 }

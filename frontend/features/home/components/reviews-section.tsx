@@ -99,7 +99,7 @@ export function ReviewsSection({ reviews }: { reviews: HomepageReviewItem[] }) {
               kicker="Отзывы"
               title={
                 <>
-                  Что говорят <span className="text-gradient">игроки</span>
+                  Что говорят <span className="text-gradient">покупатели</span>
                 </>
               }
             />
@@ -131,7 +131,7 @@ export function ReviewsSection({ reviews }: { reviews: HomepageReviewItem[] }) {
               variants={riseItem}
               ref={trackRef}
               onScroll={handleScroll}
-              className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden xl:col-span-3"
+              className="flex snap-x snap-mandatory gap-4 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden xl:col-span-3"
             >
               {hasReviews ? (
                 loopedReviews.map((review, index) => (

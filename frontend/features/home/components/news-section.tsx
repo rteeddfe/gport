@@ -14,7 +14,7 @@ import { SectionHeading } from "./section-heading";
 /** Latest store news: the homepage server component feeds the newest
  * published posts (limit 3) from the blog API; cards reuse the blog
  * PostCard (logo fallback cover included). Empty list → nothing renders. */
-export function NewsSection({ posts }: { posts: Post[] }) {
+export function NewsSection({ posts, logoUrl = "" }: { posts: Post[]; logoUrl?: string }) {
   if (posts.length === 0) return null;
 
   return (
@@ -49,7 +49,7 @@ export function NewsSection({ posts }: { posts: Post[] }) {
           <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {posts.map((post) => (
               <motion.div key={post.id} variants={riseItem} className="h-full">
-                <PostCard post={post} />
+                <PostCard post={post} logoUrl={logoUrl} />
               </motion.div>
             ))}
           </div>

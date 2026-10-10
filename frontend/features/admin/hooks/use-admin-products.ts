@@ -33,9 +33,11 @@ export function useAdminProductMutations() {
 
   const invalidate = () => {
     // The public catalog, product page and search read the same rows —
-    // drop the server Data Cache tags, then refresh the client caches.
+    // drop the server Data Cache tags, then refresh the client caches
+    // (the singular key covers the edit form: ["admin-product", id]).
     void revalidateStorefrontTags(["products"]);
     queryClient.invalidateQueries({ queryKey: ["admin-products"] });
+    queryClient.invalidateQueries({ queryKey: ["admin-product"] });
     queryClient.invalidateQueries({ queryKey: ["products"] });
   };
 

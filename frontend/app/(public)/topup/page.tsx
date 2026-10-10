@@ -1,24 +1,21 @@
-import type { CSSProperties } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 
 import { Container } from "@/components/layout/container";
 import { getProducts } from "@/services/products.service";
 import { ProductRevealGrid } from "@/features/products/components/product-reveal-grid";
-import { SERVICES } from "@/features/home/services-data";
+import { getFallbackLogo } from "@/services/settings.service";
 import type { Product } from "@/types/api";
 
 export const metadata = { title: "Пополнение" };
 
 /**
- * Top-up screen: the six services from the home wall (same `.service-tile`
- * CSS, presentational — the purchase flow itself is not approved yet)
- * over the approved neon backdrop, plus the real game-currency products
- * from the API pointing at the catalog. Renders nothing in the products
- * grid when the API is down (the backdrop still carries the screen).
+ * Top-up screen: the real game-currency products from the API pointing
+ * at the catalog. The old built-in service tiles are gone — the section
+ * renders nothing beyond the header while the catalog is empty.
  */
 export default async function TopUpPage() {
+  const logoUrl = await getFallbackLogo();
   let items: Product[] = [];
   try {
     const result = await getProducts({ categorySlug: "game-currency", limit: 12 });
@@ -64,40 +61,6 @@ export default async function TopUpPage() {
           </p>
         </header>
 
-        <div className="service-wall mt-10 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
-          {SERVICES.map((service) => (
-            <div
-              key={service.name}
-              style={{ "--tile-glow": service.glow } as CSSProperties}
-              className="service-tile relative aspect-[3/4] overflow-hidden rounded-2xl"
-            >
-              <span
-                className="tile-art absolute inset-0 flex items-center justify-center"
-                style={{ background: service.background }}
-              >
-                {service.icon ? (
-                  <Image
-                    src={service.icon}
-                    alt=""
-                    width={56}
-                    height={56}
-                    unoptimized
-                    className="tile-logo size-14"
-                  />
-                ) : (
-                  <span className="tile-logo">{service.iconNode}</span>
-                )}
-              </span>
-              <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/30 to-transparent px-3 pt-8 pb-2.5">
-                <span className="block text-xs font-semibold text-white">{service.name}</span>
-                <span className="mt-0.5 block text-[11px] text-white/65">
-                  от {service.priceFrom.toLocaleString("ru-RU")} ₽
-                </span>
-              </span>
-            </div>
-          ))}
-        </div>
-
         {items.length > 0 ? (
           <>
             <div className="mt-14 flex items-end justify-between gap-4">
@@ -121,6 +84,7 @@ export default async function TopUpPage() {
               <ProductRevealGrid
                 items={items}
                 columnsClass="grid-cols-2 sm:grid-cols-3 lg:grid-cols-6"
+                logoUrl={logoUrl}
               />
             </div>
           </>

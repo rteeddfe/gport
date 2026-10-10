@@ -50,9 +50,18 @@ export function SeoSettingsForm({ settings }: SeoSettingsFormProps) {
       await update.mutateAsync({
         // Carry the untouched general fields — the PUT replaces the row.
         siteName: settings.siteName,
+        descriptor: settings.descriptor,
+        descriptorFooter: settings.descriptorFooter,
         supportEmail: settings.supportEmail,
+        legalName: settings.legalName,
+        legalInn: settings.legalInn,
+        legalOgrn: settings.legalOgrn,
+        legalAddress: settings.legalAddress,
+        legalPhone: settings.legalPhone,
         logoUrl: settings.logoUrl,
         socials: settings.socials,
+        headerMenu: settings.headerMenu,
+        footerMenus: settings.footerMenus,
         seoTitle: values.seoTitle,
         seoDescription: values.seoDescription,
         ogImageUrl: values.ogImageUrl || null,

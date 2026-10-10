@@ -83,29 +83,33 @@ export function HeroBanner({
               </motion.p>
             ) : null}
             <motion.div variants={riseItem} className="mt-10 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-              {/* Two entry points: the flagship top-up service and the
-                  catalog (label/href stay admin-managed). */}
-              <Button asChild size="lg" className="h-12 w-full justify-between rounded-xl px-7 text-base sm:w-fit sm:justify-center">
-                <Link href="/topup">
-                  Пополнение
-                  <span className="grid size-7 place-items-center rounded-full bg-white/15">
-                    <Wallet className="size-3.5" aria-hidden />
-                  </span>
-                </Link>
-              </Button>
-              <Button
-                asChild
-                variant="outline"
-                size="lg"
-                className="h-12 w-full justify-between rounded-xl px-7 text-base sm:w-fit sm:justify-center"
-              >
-                <Link href={content.ctaHref}>
-                  {content.ctaLabel}
-                  <span className="bg-brand/15 grid size-7 place-items-center rounded-full">
-                    <Gamepad2 className="text-brand-bright size-3.5" aria-hidden />
-                  </span>
-                </Link>
-              </Button>
+              {/* Two admin-managed CTAs: the flagship service link (filled)
+                  and the catalog (outline). Empty label/href — no button. */}
+              {content.ctaPrimaryHref && content.ctaPrimaryLabel ? (
+                <Button asChild size="lg" className="h-12 w-full justify-between rounded-xl px-7 text-base sm:w-fit sm:justify-center">
+                  <Link href={content.ctaPrimaryHref}>
+                    {content.ctaPrimaryLabel}
+                    <span className="grid size-7 place-items-center rounded-full bg-white/15">
+                      <Wallet className="size-3.5" aria-hidden />
+                    </span>
+                  </Link>
+                </Button>
+              ) : null}
+              {content.ctaHref && content.ctaLabel ? (
+                <Button
+                  asChild
+                  variant="outline"
+                  size="lg"
+                  className="h-12 w-full justify-between rounded-xl px-7 text-base sm:w-fit sm:justify-center"
+                >
+                  <Link href={content.ctaHref}>
+                    {content.ctaLabel}
+                    <span className="bg-brand/15 grid size-7 place-items-center rounded-full">
+                      <Gamepad2 className="text-brand-bright size-3.5" aria-hidden />
+                    </span>
+                  </Link>
+                </Button>
+              ) : null}
             </motion.div>
           </div>
 

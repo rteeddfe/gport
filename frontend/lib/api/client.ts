@@ -17,6 +17,13 @@ const resolveApiBaseUrl = (): string => {
   return API_BASE_URL.replace(/^https?:\/\/[^/]+/, "");
 };
 
+/** Browser-navigation entry to backend-driven flows (OAuth start, M-OAUTH-5):
+ * in the browser this is the same-origin /api proxy path, so the OAuth
+ * callback cookies land on the storefront origin like every session cookie. */
+export function apiOriginPath(path: string): string {
+  return `${resolveApiBaseUrl()}${path}`;
+}
+
 export type ApiMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
 
 interface ApiRequestOptions<TBody> extends Omit<RequestInit, "body" | "next"> {
@@ -67,7 +74,11 @@ async function request<TResponse, TBody>(
   const { body, headers, next, ...rest } = options;
   // Tagged requests opt into the Next Data Cache (server-rendered GETs);
   // everything else stays no-store so session-sensitive reads are fresh.
-  const cache = next ? "force-cache" : "no-store";
+  // In the browser the tags are meaningless — and force-cache there would
+  // pin responses in the HTTP cache past admin edits — so browser calls
+  // are always no-store.
+  const isBrowser = typeof window !== "undefined";
+  const cache = !isBrowser && next ? "force-cache" : "no-store";
   // FormData (admin uploads) goes out verbatim — the browser sets the
   // multipart boundary header itself.
   const isFormData =

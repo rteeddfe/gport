@@ -41,9 +41,18 @@ export function AnalyticsSettingsForm({ settings }: AnalyticsSettingsFormProps) 
       await update.mutateAsync({
         // The PUT replaces the whole row — carry the untouched fields.
         siteName: settings.siteName,
+        descriptor: settings.descriptor,
+        descriptorFooter: settings.descriptorFooter,
         supportEmail: settings.supportEmail,
+        legalName: settings.legalName,
+        legalInn: settings.legalInn,
+        legalOgrn: settings.legalOgrn,
+        legalAddress: settings.legalAddress,
+        legalPhone: settings.legalPhone,
         logoUrl: settings.logoUrl,
         socials: settings.socials,
+        headerMenu: settings.headerMenu,
+        footerMenus: settings.footerMenus,
         seoTitle: settings.seoTitle,
         seoDescription: settings.seoDescription,
         ogImageUrl: settings.ogImageUrl,

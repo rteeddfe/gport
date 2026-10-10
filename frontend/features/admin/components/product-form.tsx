@@ -8,6 +8,7 @@ import { useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -19,9 +20,19 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { useMe } from "@/features/auth/hooks/use-me";
 import { toCents } from "@/lib/money";
+import { productTagLabel } from "@/lib/product-tags";
+import { revalidateStorefrontTags } from "@/lib/revalidate";
+import { SECTIONS } from "@/lib/sections";
+import { SYSREQ_ROWS, type SysReqKey } from "@/lib/system-requirements";
 import { useAdminProductMutations } from "../hooks/use-admin-products";
+import { useListValues } from "../hooks/use-admin-list-values";
 import { useCategories } from "../hooks/use-admin-categories";
+import {
+  adminReplaceProductFaq,
+  type AdminProduct,
+} from "@/services/products.service";
 import { ProductImagesField } from "./product-images-field";
 import { ProductFaqField } from "./product-faq-field";
 import { ProductKeysField } from "./product-keys-field";
@@ -29,13 +40,38 @@ import {
   productSchema,
   type ProductFormValues,
 } from "@/schemas/product.schema";
-import type { Product } from "@/types/api";
+import type { SystemRequirementsRow } from "@/types/api";
 
 export const PRODUCT_STATUS_LABELS = {
   DRAFT: "Черновик",
   PUBLISHED: "Опубликован",
   ARCHIVED: "В архиве",
 } as const;
+
+/** A tier form value = the five string fields (empty = not filled). */
+type SysReqTierValues = Record<SysReqKey, string>;
+
+function sysReqTierFormValues(
+  row: SystemRequirementsRow | undefined,
+): SysReqTierValues {
+  return {
+    os: row?.os ?? "",
+    cpu: row?.cpu ?? "",
+    gpu: row?.gpu ?? "",
+    ram: row?.ram ?? "",
+    storage: row?.storage ?? "",
+  };
+}
+
+/** Trimmed tier for the API payload; undefined when nothing is filled. */
+function sysReqTierPayload(
+  tier: SysReqTierValues,
+): SystemRequirementsRow | undefined {
+  const entries = SYSREQ_ROWS.map(({ key }) => [key, tier[key].trim()] as const);
+  const filled = entries.filter(([, value]) => value);
+  if (filled.length === 0) return undefined;
+  return Object.fromEntries(filled);
+}
 
 export const PRODUCT_KIND_LABELS = {
   GAME_KEY: "Ключ / код активации",
@@ -50,17 +86,72 @@ const ACCOUNT_KIND_LABELS = {
   EMAIL: "Email получателя",
 } as const;
 
-function formValuesFrom(product: Product): ProductFormValues {
+/** Multi-select of registry values rendered as a checkbox list (the
+ * product stores the slugs; options come from the «Списки» registry). */
+function MultiListField({
+  label,
+  hint,
+  values,
+  options,
+  onToggle,
+}: {
+  label: string;
+  hint?: string;
+  values: string[];
+  options: { slug: string; name: string }[];
+  onToggle: (slug: string) => void;
+}) {
+  return (
+    <fieldset className="border-border space-y-2 rounded-xl border p-3">
+      <legend className="text-muted-foreground px-1 text-xs font-medium">
+        {label}
+      </legend>
+      {options.length > 0 ? (
+        <div className="max-h-40 space-y-1.5 overflow-y-auto pr-1">
+          {options.map((option) => (
+            <label
+              key={option.slug}
+              className="hover:bg-raised/40 flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-sm"
+            >
+              <Checkbox
+                checked={values.includes(option.slug)}
+                onCheckedChange={() => onToggle(option.slug)}
+              />
+              {option.name}
+            </label>
+          ))}
+        </div>
+      ) : (
+        <p className="text-muted-foreground text-xs">
+          Список пуст — заполните его в «Категории» → «Списки».
+        </p>
+      )}
+      {hint ? <p className="text-muted-foreground text-xs">{hint}</p> : null}
+    </fieldset>
+  );
+}
+
+function formValuesFrom(product: AdminProduct): ProductFormValues {
   return {
     title: product.title,
     slug: product.slug,
     description: product.description ?? "",
     instruction: product.instruction ?? "",
-    region: product.region ?? "",
     platform: product.platform ?? "",
-    genre: product.genre.join(", "),
-    localization: product.localization ?? "",
-    ageRating: product.ageRating ?? "",
+    genre: product.genre,
+    consoles: product.consoles,
+    tags: product.tags[0] ?? "",
+    cashbackPercent: product.cashbackPercent ? String(product.cashbackPercent) : "",
+    releaseYear: product.releaseYear != null ? String(product.releaseYear) : "",
+    rating: product.rating != null ? String(product.rating) : "",
+    tagline: product.tagline ?? "",
+    group: product.group ?? "",
+    features: product.features,
+    searchAliases: product.searchAliases.join(", "),
+    systemRequirements: {
+      minimum: sysReqTierFormValues(product.systemRequirements?.minimum),
+      recommended: sysReqTierFormValues(product.systemRequirements?.recommended),
+    },
     images: product.images,
     priceRub: (product.priceCents / 100).toString(),
     oldPriceRub: product.oldPriceCents ? (product.oldPriceCents / 100).toString() : "",
@@ -80,6 +171,11 @@ function formValuesFrom(product: Product): ProductFormValues {
       priceRub: (variant.priceCents / 100).toString(),
       oldPriceRub: variant.oldPriceCents ? (variant.oldPriceCents / 100).toString() : "",
     })),
+    faq: (product.faq ?? []).map((item) => ({
+      id: crypto.randomUUID(),
+      question: item.question,
+      answer: item.answer,
+    })),
     categoryId: product.categoryId,
   };
 }
@@ -87,13 +183,23 @@ function formValuesFrom(product: Product): ProductFormValues {
 const EMPTY_VALUES: ProductFormValues = {
   title: "",
   slug: "",
-  description: "",
-  instruction: "",
-  region: "",
-  platform: "",
-  genre: "",
-  localization: "",
-  ageRating: "",
+    description: "",
+    instruction: "",
+    platform: "",
+    genre: [],
+    consoles: [],
+    tags: "",
+    cashbackPercent: "",
+    releaseYear: "",
+    rating: "",
+    tagline: "",
+    group: "",
+    features: [],
+    searchAliases: "",
+  systemRequirements: {
+    minimum: sysReqTierFormValues(undefined),
+    recommended: sysReqTierFormValues(undefined),
+  },
   images: [],
   priceRub: "",
   oldPriceRub: "",
@@ -107,12 +213,13 @@ const EMPTY_VALUES: ProductFormValues = {
   accountFieldLabel: "",
   accountFieldHint: "",
   variants: [],
+  faq: [],
   categoryId: "",
 };
 
 interface ProductFormProps {
   /** Absent on the create page. */
-  product?: Product;
+  product?: AdminProduct;
 }
 
 /** Admin create/edit product form. Ruble strings convert to kopecks and
@@ -123,8 +230,16 @@ export function ProductForm({ product }: ProductFormProps) {
   const router = useRouter();
   const { create, update } = useAdminProductMutations();
   const categories = useCategories();
+  const lists = useListValues();
+  // Raw key values are SUPER_ADMIN-only (the keys API enforces it) —
+  // the field is hidden from plain ADMINs instead of showing a 403.
+  const { data: user } = useMe();
   const [error, setError] = useState<string | null>(null);
   const editMode = product !== undefined;
+  // Once a product row exists (created here or loaded), every submit
+  // updates it — a retry after a failed FAQ save must not duplicate it.
+  const [savedProductId, setSavedProductId] = useState<string | null>(null);
+  const productId = product?.id ?? savedProductId;
 
   const form = useForm<ProductFormValues>({
     resolver: zodResolver(productSchema),
@@ -134,22 +249,99 @@ export function ProductForm({ product }: ProductFormProps) {
   const kind = form.watch("kind");
   const variantsArray = useFieldArray({ control: form.control, name: "variants" });
 
+  /** The fixed section (раздел) is derived from the selected category and
+   * doubles as its filter; it is UI-only — the API payload carries just
+   * categoryId. The override lets the admin re-target the product while
+   * it loads (categories arrive async). */
+  const categoryOptions = categories.data ?? [];
+  const selectedCategory = categoryOptions.find(
+    (category) => category.id === form.watch("categoryId"),
+  );
+  const [sectionOverride, setSectionOverride] = useState<string | null>(null);
+  const section = sectionOverride ?? selectedCategory?.type ?? "";
+  const sectionCategories = section
+    ? categoryOptions.filter((category) => category.type === section)
+    : categoryOptions;
+
+  const changeSection = (value: string) => {
+    setSectionOverride(value);
+    // The current category may not belong to the new section — drop it so
+    // the admin re-picks (the schema requires a category).
+    if (
+      value &&
+      !categoryOptions.some(
+        (category) => category.type === value && category.id === form.watch("categoryId"),
+      )
+    ) {
+      form.setValue("categoryId", "");
+    }
+  };
+
+  /** Registry values by kind; a saved value missing from the registry
+   * stays selectable so an edit round-trip doesn't silently drop it. */
+  const optionsFor = (kindOf: string): { slug: string; name: string }[] =>
+    (lists.data ?? [])
+      .filter((value) => value.kind === kindOf)
+      .map((value) => ({ slug: value.slug, name: value.name }));
+
+  const withSaved = (
+    kindOf: string,
+    saved: string | undefined,
+  ): { slug: string; name: string }[] => {
+    const options = optionsFor(kindOf);
+    if (saved && !options.some((option) => option.slug === saved)) {
+      return [{ slug: saved, name: saved }, ...options];
+    }
+    return options;
+  };
+
+  const toggleValue = (field: "genre" | "consoles" | "features", slug: string) => {
+    const current = form.getValues(field);
+    form.setValue(
+      field,
+      current.includes(slug)
+        ? current.filter((item) => item !== slug)
+        : [...current, slug],
+    );
+  };
+
+  /** Splits a comma-separated form field into a clean string list. */
+  const splitList = (value: string): string[] =>
+    value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+
   async function onSubmit(values: ProductFormValues) {
     setError(null);
     const isTopUp = values.kind !== "GAME_KEY";
+    const minimumReq = sysReqTierPayload(values.systemRequirements.minimum);
+    const recommendedReq = sysReqTierPayload(values.systemRequirements.recommended);
     const input = {
       title: values.title,
       slug: values.slug || undefined,
       description: values.description.trim() || undefined,
       instruction: values.instruction.trim() || undefined,
-      region: values.region.trim() || undefined,
       platform: values.platform.trim() || undefined,
-      genre: values.genre
-        .split(",")
-        .map((genre) => genre.trim())
-        .filter(Boolean),
-      localization: values.localization.trim() || undefined,
-      ageRating: values.ageRating.trim() || undefined,
+      genre: values.genre,
+      consoles: values.consoles,
+      // Selects use a single-space «no value» item (Radix forbids "") —
+      // trim it away here.
+      tags: values.tags.trim() ? [values.tags.trim()] : [],
+      cashbackPercent: values.cashbackPercent ? Number(values.cashbackPercent) : 0,
+      releaseYear: values.releaseYear ? Number(values.releaseYear) : null,
+      rating: values.rating ? Number(values.rating.replace(",", ".")) : null,
+      tagline: values.tagline.trim() || null,
+      group: values.group.trim() || null,
+      features: values.features,
+      searchAliases: splitList(values.searchAliases),
+      systemRequirements:
+        minimumReq || recommendedReq
+          ? {
+              ...(minimumReq ? { minimum: minimumReq } : {}),
+              ...(recommendedReq ? { recommended: recommendedReq } : {}),
+            }
+          : null,
       images: values.images,
       priceCents: toCents(values.priceRub),
       oldPriceCents: values.oldPriceRub ? toCents(values.oldPriceRub) : null,
@@ -174,12 +366,29 @@ export function ProductForm({ product }: ProductFormProps) {
           : [],
       categoryId: values.categoryId,
     };
+    // Empty rows are dropped here — the FAQ DTO rejects empty questions;
+    // the backend re-trims and re-filters on top.
+    const faq = values.faq
+      .map(({ question, answer }) => ({
+        question: question.trim(),
+        answer: answer.trim(),
+      }))
+      .filter((row) => row.question !== "" && row.answer !== "");
     try {
-      if (editMode && product) {
-        await update.mutateAsync({ id: product.id, input });
+      let id = productId;
+      if (id) {
+        await update.mutateAsync({ id, input });
       } else {
-        await create.mutateAsync(input);
+        const created = await create.mutateAsync(input);
+        id = created.id;
+        setSavedProductId(id);
       }
+      // The FAQ list replaces wholesale on every save of an existing
+      // product; a fresh product gets it only when rows were filled.
+      if (productId || faq.length > 0) {
+        await adminReplaceProductFaq(id, faq);
+      }
+      void revalidateStorefrontTags(["products"]);
       router.push("/admin/products");
       router.refresh();
     } catch (cause) {
@@ -187,7 +396,7 @@ export function ProductForm({ product }: ProductFormProps) {
     }
   }
 
-  if (categories.isPending) {
+  if (categories.isPending || lists.isPending) {
     return <Skeleton className="h-96 w-full" />;
   }
   if (categories.isError) {
@@ -197,7 +406,13 @@ export function ProductForm({ product }: ProductFormProps) {
       </p>
     );
   }
-  const categoryOptions = categories.data;
+  if (lists.isError) {
+    return (
+      <p className="text-destructive text-sm">
+        Не удалось загрузить списки значений: {lists.error.message}
+      </p>
+    );
+  }
 
   return (
     <form onSubmit={form.handleSubmit(onSubmit)} noValidate className="space-y-8">
@@ -221,6 +436,27 @@ export function ProductForm({ product }: ProductFormProps) {
           </p>
         </div>
         <div className="space-y-1.5">
+          <Label>Раздел</Label>
+          <Select
+            value={section}
+            onValueChange={changeSection}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Выберите раздел" />
+            </SelectTrigger>
+            <SelectContent>
+              {SECTIONS.map((item) => (
+                <SelectItem key={item.value} value={item.value}>
+                  {item.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-muted-foreground text-xs">
+            Разделы заданы системой: Игры, Подписки, Валюта и пополнение.
+          </p>
+        </div>
+        <div className="space-y-1.5">
           <Label>Категория</Label>
           <Select
             value={form.watch("categoryId")}
@@ -230,7 +466,7 @@ export function ProductForm({ product }: ProductFormProps) {
               <SelectValue placeholder="Выберите категорию" />
             </SelectTrigger>
             <SelectContent>
-              {categoryOptions.map((category) => (
+              {sectionCategories.map((category) => (
                 <SelectItem key={category.id} value={category.id}>
                   {category.name}
                 </SelectItem>
@@ -524,29 +760,165 @@ export function ProductForm({ product }: ProductFormProps) {
         </div>
       </section>
 
+      {/* Атрибуты из справочников «Списки»: значения — селекты, слаги
+          хранятся у товара и обслуживают фильтры каталога. */}
       <section className="grid gap-4 lg:grid-cols-2">
         <div className="space-y-1.5">
-          <Label htmlFor="region">Регион</Label>
-          <Input id="region" placeholder="RU+CIS" {...form.register("region")} />
-        </div>
-        <div className="space-y-1.5">
           <Label htmlFor="platform">Платформа</Label>
-          <Input id="platform" placeholder="Steam" {...form.register("platform")} />
+          <Select
+            value={form.watch("platform")}
+            onValueChange={(value) => form.setValue("platform", value)}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Без платформы" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value=" ">Без платформы</SelectItem>
+              {withSaved("platform", form.watch("platform") || undefined).map((option) => (
+                <SelectItem key={option.slug} value={option.slug}>
+                  {option.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-muted-foreground text-xs">
+            Значения настраиваются в «Категории» → «Списки».
+          </p>
+        </div>
+        <MultiListField
+          label="Жанры"
+          values={form.watch("genre")}
+          options={withSaved("genre", undefined)}
+          onToggle={(slug) => toggleValue("genre", slug)}
+        />
+        <div className="space-y-1.5">
+          <Label htmlFor="releaseYear">Год выхода</Label>
+          <Input id="releaseYear" inputMode="numeric" placeholder="2025" {...form.register("releaseYear")} />
+          {errors.releaseYear ? (
+            <p className="text-destructive text-xs">{errors.releaseYear.message}</p>
+          ) : null}
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="genre">Жанры</Label>
-          <Input id="genre" placeholder="Action, RPG" {...form.register("genre")} />
-          <p className="text-muted-foreground text-xs">Через запятую.</p>
+          <Label htmlFor="rating">Рейтинг карточки (0–5)</Label>
+          <Input id="rating" inputMode="decimal" placeholder="4.8" {...form.register("rating")} />
+          {errors.rating ? (
+            <p className="text-destructive text-xs">{errors.rating.message}</p>
+          ) : null}
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="localization">Локализация</Label>
-          <Input id="localization" placeholder="RU" {...form.register("localization")} />
+          <Label htmlFor="cashbackPercent">Кешбэк, %</Label>
+          <Input id="cashbackPercent" inputMode="numeric" placeholder="5" {...form.register("cashbackPercent")} />
+          {errors.cashbackPercent ? (
+            <p className="text-destructive text-xs">{errors.cashbackPercent.message}</p>
+          ) : null}
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="ageRating">Возрастной рейтинг</Label>
-          <Input id="ageRating" placeholder="18+" {...form.register("ageRating")} />
+          <Label>Метка карточки</Label>
+          <Select
+            value={form.watch("tags")}
+            onValueChange={(value) => form.setValue("tags", value)}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Без метки" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value=" ">Без метки</SelectItem>
+              {withSaved("tags", form.watch("tags") || undefined).map((option) => (
+                <SelectItem key={option.slug} value={option.slug}>
+                  {productTagLabel(option.slug) === option.slug
+                    ? option.name
+                    : productTagLabel(option.slug)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-muted-foreground text-xs">
+            Варианты настраиваются в «Категории» → «Списки» → «Метки».
+          </p>
+        </div>
+        <MultiListField
+          label="Консоли"
+          values={form.watch("consoles")}
+          options={withSaved("consoles", undefined)}
+          onToggle={(slug) => toggleValue("consoles", slug)}
+        />
+        <div className="space-y-1.5">
+          <Label htmlFor="searchAliases">Алиасы поиска</Label>
+          <Input id="searchAliases" placeholder="пс плюс, ps plus, плейстейшн" {...form.register("searchAliases")} />
+          <p className="text-muted-foreground text-xs">Через запятую; точное совпадение в поиске.</p>
         </div>
       </section>
+
+      {/* Подписочный блок: только у раздела «Подписки». */}
+      {section === "subscriptions" ? (
+        <section className="border-border bg-canvas/40 grid gap-4 rounded-2xl border p-4 sm:p-6 lg:grid-cols-2">
+          <div className="space-y-1.5 sm:col-span-2">
+            <h2 className="text-sm font-semibold">Подписка</h2>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="tagline">Подзаголовок</Label>
+            <Input id="tagline" placeholder="Онлайн-игра, каталог игр для PS4 и PS5" {...form.register("tagline")} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Группа подписки</Label>
+            <Select
+              value={form.watch("group")}
+              onValueChange={(value) => form.setValue("group", value)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Без группы" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value=" ">Без группы</SelectItem>
+                {withSaved("subscription-group", form.watch("group") || undefined).map((option) => (
+                  <SelectItem key={option.slug} value={option.slug}>
+                    {option.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="sm:col-span-2">
+            <MultiListField
+              label="Что входит"
+              values={form.watch("features")}
+              options={withSaved("subscription-includes", undefined)}
+              onToggle={(slug) => toggleValue("features", slug)}
+            />
+          </div>
+        </section>
+      ) : null}
+
+      {kind === "GAME_KEY" ? (
+        <section className="space-y-3">
+          <div>
+            <Label>Системные требования</Label>
+            <p className="text-muted-foreground text-xs">
+              Показываются блоком на странице игры; пустые поля скрываются. Для консольных игр
+              (PS, Xbox, Switch) оставьте оба уровня пустыми.
+            </p>
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            {(["minimum", "recommended"] as const).map((tier) => (
+              <div key={tier} className="border-border space-y-3 rounded-2xl border p-4">
+                <p className="text-muted-foreground text-xs font-semibold uppercase tracking-wider">
+                  {tier === "minimum" ? "Минимальные" : "Рекомендуемые"}
+                </p>
+                {SYSREQ_ROWS.map((row) => (
+                  <div key={row.key} className="space-y-1.5">
+                    <Label htmlFor={`sysreq-${tier}-${row.key}`}>{row.label}</Label>
+                    <Input
+                      id={`sysreq-${tier}-${row.key}`}
+                      placeholder={row.placeholder}
+                      {...form.register(`systemRequirements.${tier}.${row.key}`)}
+                    />
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="space-y-2">
         <Label>Обложки</Label>
@@ -583,10 +955,13 @@ export function ProductForm({ product }: ProductFormProps) {
         </div>
       </section>
 
-      {product && product.kind === "GAME_KEY" && product.creditingMode === "AUTO_CODE" ? (
+      {user?.role === "SUPER_ADMIN" &&
+      product &&
+      product.kind === "GAME_KEY" &&
+      product.creditingMode === "AUTO_CODE" ? (
         <ProductKeysField productId={product.id} />
       ) : null}
-      {product ? <ProductFaqField productId={product.id} /> : null}
+      <ProductFaqField form={form} />
 
       <div className="flex items-center gap-4">
         <Button type="submit" disabled={create.isPending || update.isPending} className="gap-2">

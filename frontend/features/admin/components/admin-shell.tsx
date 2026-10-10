@@ -18,6 +18,8 @@ import {
 } from "@/components/ui/sheet";
 import { UserCard } from "@/features/auth/components/user-card";
 import { useMe } from "@/features/auth/hooks/use-me";
+import { useAdminPendingCounts } from "../hooks/use-admin-pending-counts";
+import { useSiteSettings } from "@/features/settings/hooks/use-site-settings";
 import { visibleAdminNavItems } from "../permissions";
 
 function AccessDenied() {
@@ -50,7 +52,15 @@ function AccessDenied() {
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { data: user, isPending } = useMe();
+  // The logo renders only when configured in the site settings — the
+  // panel ships logo-free with the blank store.
+  const { data: settings } = useSiteSettings();
+  const logoUrl = settings?.logoUrl ?? "";
+  const siteName = settings?.siteName ?? "";
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  // Pending chips on the nav items (new tickets / reviews to moderate);
+  // must run before any conditional return (rules of hooks).
+  const pending = useAdminPendingCounts(user);
 
   useEffect(() => {
     if (!isPending && !user) router.replace("/sign-in");
@@ -62,11 +72,21 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     return <AccessDenied />;
   }
 
-  const navItems = visibleAdminNavItems(user);
+  const navItems = visibleAdminNavItems(user).map((item) => {
+    if (item.href === "/admin/support" && pending.support > 0) {
+      return { ...item, badge: pending.support };
+    }
+    if (item.href === "/admin/reviews" && pending.reviews > 0) {
+      return { ...item, badge: pending.reviews };
+    }
+    return item;
+  });
 
   return (
     <div className="flex min-h-screen">
-      <aside className="bg-surface border-border hidden w-60 shrink-0 flex-col border-r md:flex">
+      {/* Sticky full-height rail: stays in view while long pages scroll;
+          the nav list scrolls internally when the items overflow. */}
+      <aside className="bg-surface border-border sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r md:flex">
         <div className="border-border flex h-16 items-center gap-2.5 border-b px-5">
           <Link
             href="/"
@@ -74,13 +94,16 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             title="Перейти на сайт"
             className="transition-opacity hover:opacity-80"
           >
-            <Image
-              src="/logo2.png"
-              alt="GPort"
-              width={2400}
-              height={1569}
-              className="h-7 w-auto object-contain"
-            />
+            {logoUrl ? (
+              <Image
+                src={logoUrl}
+                alt={siteName}
+                width={2400}
+                height={1569}
+                unoptimized={logoUrl.toLowerCase().endsWith(".svg")}
+                className="h-7 w-auto object-contain"
+              />
+            ) : null}
           </Link>
           <span className="text-muted-foreground text-[11px] leading-tight">
             админ-
@@ -128,13 +151,16 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             title="Перейти на сайт"
             className="transition-opacity hover:opacity-80"
           >
-            <Image
-              src="/logo2.png"
-              alt="GPort"
-              width={2400}
-              height={1569}
-              className="h-7 w-auto object-contain"
-            />
+            {logoUrl ? (
+              <Image
+                src={logoUrl}
+                alt={siteName}
+                width={2400}
+                height={1569}
+                unoptimized={logoUrl.toLowerCase().endsWith(".svg")}
+                className="h-7 w-auto object-contain"
+              />
+            ) : null}
           </Link>
           <Link
             href="/"

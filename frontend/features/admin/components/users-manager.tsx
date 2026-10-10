@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, Eye, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Eye, LogOut, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -15,6 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useAdminUsers, useAdminUserMutations } from "../hooks/use-admin-users";
+import { cn } from "@/lib/utils";
 import {
   ADMIN_PERMISSION_LABELS,
   ADMIN_PERMISSION_ORDER,
@@ -28,8 +29,11 @@ function roleBadgeVariant(role: AdminUser["role"]) {
 }
 
 function UserRow({ user }: { user: AdminUser }) {
-  const { remove } = useAdminUserMutations();
+  const { remove, revokeSessions } = useAdminUserMutations();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // The list rows don't know the session count — the confirm step guards
+  // the mass logout instead (same two-step pattern as the detail page).
+  const [confirmReset, setConfirmReset] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isSuper = user.role === "SUPER_ADMIN";
 
@@ -44,6 +48,21 @@ function UserRow({ user }: { user: AdminUser }) {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Ошибка");
       setConfirmDelete(false);
+    }
+  }
+
+  async function onRevokeSessions() {
+    if (!confirmReset) {
+      setConfirmReset(true);
+      return;
+    }
+    setError(null);
+    try {
+      await revokeSessions.mutateAsync(user.id);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Ошибка");
+    } finally {
+      setConfirmReset(false);
     }
   }
 
@@ -94,6 +113,19 @@ function UserRow({ user }: { user: AdminUser }) {
           <Button
             variant="ghost"
             size="icon"
+            aria-label={`Сбросить сессии ${user.email}`}
+            title="Сбросить все сессии (выход со всех устройств)"
+            disabled={revokeSessions.isPending}
+            onClick={onRevokeSessions}
+          >
+            <LogOut
+              className={cn("size-4", confirmReset && "text-destructive")}
+              aria-hidden
+            />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
             className="text-destructive"
             aria-label={`Удалить ${user.email}`}
             disabled={isSuper}
@@ -103,12 +135,16 @@ function UserRow({ user }: { user: AdminUser }) {
             <Trash2 className="size-4" aria-hidden />
           </Button>
         </div>
+        {confirmReset && !error ? (
+          <p className="text-muted-foreground mt-1 max-w-40 text-xs">
+            Нажмите ещё раз — пользователь выйдет со всех устройств.
+          </p>
+        ) : null}
         {confirmDelete && !isSuper && !error ? (
           <p className="text-muted-foreground mt-1 max-w-40 text-xs">
             Нажмите удаление ещё раз для подтверждения.
           </p>
         ) : null}
-        {error ? <p className="text-destructive mt-1 text-xs">{error}</p> : null}
       </TableCell>
     </TableRow>
   );
@@ -141,7 +177,7 @@ export function UsersManager() {
                   <TableHead>Роль</TableHead>
                   <TableHead>Права</TableHead>
                   <TableHead>Создан</TableHead>
-                  <TableHead className="w-28">Действия</TableHead>
+                  <TableHead className="w-36">Действия</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

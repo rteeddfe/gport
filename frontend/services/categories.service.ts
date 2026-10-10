@@ -11,6 +11,8 @@ export interface AdminCategoryInput {
   name: string;
   slug?: string;
   description?: string;
+  type?: string;
+  badges?: string[];
 }
 
 export function adminCreateCategory(input: AdminCategoryInput): Promise<Category> {

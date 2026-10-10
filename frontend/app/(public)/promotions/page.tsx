@@ -2,6 +2,7 @@ import { Container } from "@/components/layout/container";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ErrorState } from "@/components/shared/error-state";
 import { getErrorMessage } from "@/lib/api/errors";
+import { getFallbackLogo } from "@/services/settings.service";
 import { getProducts } from "@/services/products.service";
 import { ProductRevealGrid } from "@/features/products/components/product-reveal-grid";
 import type { Product } from "@/types/api";
@@ -21,6 +22,7 @@ export const metadata = { title: "Акции" };
  * cart, and the source of truth is the admin panel.
  */
 export default async function PromotionsPage() {
+  const logoUrl = await getFallbackLogo();
   let items: Product[] = [];
   let errorMessage: string | null = null;
 
@@ -58,6 +60,7 @@ export default async function PromotionsPage() {
             items={items}
             columnsClass="grid-cols-2 sm:grid-cols-3 lg:grid-cols-4"
             sizes="(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
+            logoUrl={logoUrl}
           />
         )}
       </div>

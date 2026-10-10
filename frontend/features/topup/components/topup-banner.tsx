@@ -12,6 +12,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/utils";
+import { useIsMounted } from "@/lib/use-is-mounted";
+import { useMe } from "@/features/auth/hooks/use-me";
 import { createBuySchema, type BuyValues } from "@/schemas/buy.schema";
 import { createOrder } from "@/services/orders.service";
 import { getPaymentMethods } from "@/services/payments.service";
@@ -48,6 +50,7 @@ export function TopupBanner({ services }: { services?: HomeServiceCard[] }) {
 }
 
 function TopupForm({ services }: { services: HomeServiceCard[] }) {
+  const { data: user, refetch } = useMe();
   const [selectedId, setSelectedId] = useState(services[0]?.productId ?? "");
   const service =
     services.find((item) => item.productId === selectedId) ?? services[0]!;
@@ -69,6 +72,9 @@ function TopupForm({ services }: { services: HomeServiceCard[] }) {
     queryFn: getPaymentMethods,
   });
   const methods = methodsQuery.data ?? [];
+  // The method list comes from a client query — gate it on mount so the
+  // server markup and the hydration render agree (see useIsMounted).
+  const isMounted = useIsMounted();
 
   const [serverError, setServerError] = useState<string | null>(null);
   const [isPaying, setIsPaying] = useState(false);
@@ -108,6 +114,12 @@ function TopupForm({ services }: { services: HomeServiceCard[] }) {
     setIsPaying(true);
     setServerError(null);
     try {
+      // Same guard as the product checkout: POST /orders is public and
+      // never 401s, so an expired access token must be rotated via a
+      // best-effort /auth/me poke before the order carries the cookie.
+      if (user) {
+        await refetch().catch(() => undefined);
+      }
       const order = await createOrder({
         productId: service.productId,
         quantity: 1,
@@ -211,18 +223,20 @@ function TopupForm({ services }: { services: HomeServiceCard[] }) {
                       onValueChange={field.onChange}
                       className="flex flex-wrap gap-2"
                     >
-                      {methods.map((method) => (
-                        <Label
-                          key={method.id}
-                          className={cn(
-                            "border-border bg-canvas/60 hover:border-brand/50 flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm",
-                            field.value === method.id && "border-brand/60 bg-brand/5",
-                          )}
-                        >
-                          <RadioGroupItem value={method.id} className="sr-only" />
-                          {method.name}
-                        </Label>
-                      ))}
+                      {isMounted
+                        ? methods.map((method) => (
+                            <Label
+                              key={method.id}
+                              className={cn(
+                                "border-border bg-canvas/60 hover:border-brand/50 flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm",
+                                field.value === method.id && "border-brand/60 bg-brand/5",
+                              )}
+                            >
+                              <RadioGroupItem value={method.id} className="sr-only" />
+                              {method.name}
+                            </Label>
+                          ))
+                        : null}
                     </RadioGroup>
                   )}
                 />

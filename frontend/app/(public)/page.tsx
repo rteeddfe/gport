@@ -1,5 +1,5 @@
 import { Container } from "@/components/layout/container";
-import { CommunitySection } from "@/features/home/components/community-section";
+import { CommunityStatsSection } from "@/features/home/components/community-stats-section";
 import { FaqSection } from "@/features/home/components/faq-section";
 import { GameCurrencySection } from "@/features/home/components/game-currency-section";
 import { GamesSection } from "@/features/home/components/games-section";
@@ -12,6 +12,7 @@ import { formatDateLong } from "@/lib/format";
 import { getHomeContent } from "@/services/home-content.service";
 import { getPosts } from "@/services/posts.service";
 import { getReviews } from "@/services/reviews.service";
+import { getFallbackLogo } from "@/services/settings.service";
 
 /** The homepage carousel shows up to 10 latest published reviews. */
 const HOMEPAGE_REVIEWS_LIMIT = 10;
@@ -21,6 +22,7 @@ const HOMEPAGE_NEWS_LIMIT = 3;
 
 export default async function HomePage() {
   const heroContent = await getHomeContent().catch(() => null);
+  const logoUrl = await getFallbackLogo();
   const reviews = await getReviews({ page: 1, limit: HOMEPAGE_REVIEWS_LIMIT }).catch(
     () => null,
   );
@@ -45,8 +47,8 @@ export default async function HomePage() {
       />
       {/* The three catalog sections: service top-ups (the wall above),
           game currency and games. */}
-      <GameCurrencySection />
-      <GamesSection />
+      <GameCurrencySection logoUrl={logoUrl} />
+      <GamesSection logoUrl={logoUrl} />
       <ReviewsSection
         reviews={(reviews?.items ?? []).map((review) => ({
           id: review.id,
@@ -56,8 +58,12 @@ export default async function HomePage() {
           dateLabel: formatDateLong(review.createdAt),
         }))}
       />
-      <CommunitySection />
-      <NewsSection posts={posts?.items ?? []} />
+      <CommunityStatsSection
+        statCards={heroContent?.statCards ?? []}
+        communityLabel={heroContent?.communityLabel ?? ""}
+        communityCards={heroContent?.communityCards ?? []}
+      />
+      <NewsSection posts={posts?.items ?? []} logoUrl={logoUrl} />
       <FaqSection />
     </>
   );

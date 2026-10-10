@@ -21,6 +21,14 @@ export function createBuySchema(
       .max(10, "Не больше 10 за раз"),
     email: z.email("Введите корректный email"),
     provider: z.string().min(1, "Выберите способ оплаты"),
+    /** Optional promo code — validated by the «Применить» check before
+     * submit; the backend re-validates against the final subtotal. */
+    promo: z
+      .string()
+      .trim()
+      .max(40, "Не длиннее 40 символов")
+      .regex(/^$|^[A-Za-z0-9_-]+$/, "Промокод: латиница, цифры, «_» и «-»")
+      .optional(),
     /** TOPUP_NOMINAL only. */
     variantId:
       kind === "TOPUP_NOMINAL"

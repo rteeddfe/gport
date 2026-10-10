@@ -18,14 +18,14 @@ const geistMono = Geist_Mono({
 });
 
 /** SEO title/description, favicon and og:image are admin-managed
- * (settings service); the statics below are the API-down fallback. */
+ * (settings service); the store ships blank — empty favicon/og simply
+ * omit the metadata (an empty href renders a <link href=""> and warns
+ * in the console). */
 export async function generateMetadata(): Promise<Metadata> {
   const settings = await getSettings().catch(() => null);
-  const seoTitle = settings?.seoTitle ?? "GPort — магазин цифровых товаров";
-  const seoDescription =
-    settings?.seoDescription ??
-    "Интернет-магазин цифровых игровых товаров и услуг";
-  const faviconUrl = settings?.faviconUrl ?? "/icons/icon.svg";
+  const seoTitle = settings?.seoTitle ?? "";
+  const seoDescription = settings?.seoDescription ?? "";
+  const faviconUrl = settings?.faviconUrl ?? "";
   const yandexVerification = yandexVerificationCode(
     settings?.yandexVerification,
   );
@@ -33,22 +33,20 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: {
       default: seoTitle,
-      template: "%s — GPort",
+      template: seoTitle ? `%s — ${seoTitle}` : "%s",
     },
     description: seoDescription,
     manifest: "/manifest.webmanifest",
     appleWebApp: {
       capable: true,
       statusBarStyle: "black-translucent",
-      title: "GPort",
     },
-    icons: {
-      icon: [{ url: faviconUrl }],
-      apple: [{ url: faviconUrl }],
-    },
+    ...(faviconUrl
+      ? { icons: { icon: [{ url: faviconUrl }], apple: [{ url: faviconUrl }] } }
+      : {}),
     openGraph: {
-      title: seoTitle,
-      description: seoDescription,
+      ...(seoTitle ? { title: seoTitle } : {}),
+      ...(seoDescription ? { description: seoDescription } : {}),
       ...(settings?.ogImageUrl ? { images: [{ url: settings.ogImageUrl }] } : {}),
     },
     // Yandex Webmaster site verification (admin analytics tab).

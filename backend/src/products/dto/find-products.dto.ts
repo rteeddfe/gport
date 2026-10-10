@@ -1,18 +1,22 @@
 import { Type } from 'class-transformer';
 import {
   IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
   Max,
   MaxLength,
   Min,
+  Matches,
 } from 'class-validator';
 
 export enum ProductSort {
+  POPULAR = 'popular',
   NEW = 'new',
   PRICE_ASC = 'price_asc',
   PRICE_DESC = 'price_desc',
+  DISCOUNT = 'discount',
 }
 
 /** Filters for the public catalog. Public reads always see PUBLISHED only. */
@@ -40,20 +44,24 @@ export class FindProductsDto {
   @MaxLength(100)
   search?: string;
 
+  /** Comma-separated registry slugs (multi-select in the sidebar). */
   @IsOptional()
   @IsString()
-  @MaxLength(100)
-  region?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(100)
+  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*(?:,[a-z0-9]+(?:-[a-z0-9]+)*)*$/)
+  @MaxLength(200)
   platform?: string;
 
+  /** Comma-separated registry slugs (multi-select in the sidebar). */
   @IsOptional()
   @IsString()
-  @MaxLength(50)
+  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*(?:,[a-z0-9]+(?:-[a-z0-9]+)*)*$/)
+  @MaxLength(200)
   genre?: string;
+
+  /** «Только со скидкой»: oldPriceCents must be set. */
+  @IsOptional()
+  @IsIn(['1', 'true'])
+  sale?: '1' | 'true';
 
   @IsOptional()
   @Type(() => Number)

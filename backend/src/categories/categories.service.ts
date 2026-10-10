@@ -8,6 +8,7 @@ export interface CategoryWithCount {
   name: string;
   slug: string;
   description: string | null;
+  type: string;
   productsCount: number;
 }
 
@@ -38,6 +39,7 @@ export class CategoriesService {
         name: dto.name,
         slug,
         description: dto.description ?? null,
+        type: dto.type ?? '',
       },
       include: PUBLISHED_COUNT,
     });
@@ -58,6 +60,8 @@ export class CategoriesService {
         name,
         slug,
         description: dto.description,
+        // The admin form always sends the section.
+        type: dto.type,
       },
       include: PUBLISHED_COUNT,
     });

@@ -20,11 +20,14 @@ export function CatalogGrid({
   kicker,
   title,
   moreHref,
+  logoUrl = "",
 }: {
   items: Product[];
   kicker: string;
   title: React.ReactNode;
   moreHref: string;
+  /** Settings logo for the no-cover card fallback. */
+  logoUrl?: string;
 }) {
   return (
     <motion.div
@@ -42,7 +45,7 @@ export function CatalogGrid({
       <ul className="mt-10 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {items.map((product) => (
           <motion.li key={product.id} variants={riseItem}>
-            <ProductCard product={product} />
+            <ProductCard product={product} logoUrl={logoUrl} />
           </motion.li>
         ))}
         <motion.li variants={riseItem}>

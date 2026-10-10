@@ -5,6 +5,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { ErrorState } from "@/components/shared/error-state";
 import { PostCard } from "@/features/blog/components/post-card";
 import { getErrorMessage } from "@/lib/api/errors";
+import { getFallbackLogo } from "@/services/settings.service";
 import { getPosts } from "@/services/posts.service";
 import type { Post } from "@/types/api";
 
@@ -18,6 +19,7 @@ type SearchParams = Promise<{ page?: string }>;
  * first, query-param pagination. */
 export default async function BlogPage({ searchParams }: { searchParams: SearchParams }) {
   const { page: pageParam } = await searchParams;
+  const logoUrl = await getFallbackLogo();
   const page = Math.max(1, Number(pageParam) || 1);
 
   let items: Post[] = [];
@@ -57,7 +59,7 @@ export default async function BlogPage({ searchParams }: { searchParams: SearchP
         ) : (
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {items.map((post) => (
-              <PostCard key={post.id} post={post} />
+              <PostCard key={post.id} post={post} logoUrl={logoUrl} />
             ))}
           </div>
         )}

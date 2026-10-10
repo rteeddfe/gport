@@ -15,12 +15,45 @@ export const productSchema = z
       .max(200),
     description: z.string().max(5000, "Не длиннее 5000 символов"),
     instruction: z.string().max(5000, "Не длиннее 5000 символов"),
-    region: z.string().trim().max(100, "Не длиннее 100 символов"),
-    platform: z.string().trim().max(100, "Не длиннее 100 символов"),
-    /** Comma-separated in the form; split into an array before submit. */
-    genre: z.string().max(500, "Не длиннее 500 символов"),
-    localization: z.string().trim().max(100, "Не длиннее 100 символов"),
-    ageRating: z.string().trim().max(10, "Не длиннее 10 символов"),
+    /** Registry slug picked from the «Платформа» list; empty = none. */
+    platform: z.string().trim().max(100),
+    /** Multi-select of registry slugs («Жанры» list). */
+    genre: z.array(z.string().max(100)).max(20),
+    /** Multi-select of registry slugs («Консоли» list). */
+    consoles: z.array(z.string().max(100)).max(20),
+    /** Card badge («метка карточки») picked from the «Метки» list;
+     * empty = no badge. */
+    tags: z.string().max(100),
+    /** Card cashback percent 0–99 (rubles strings are parsed on submit). */
+    cashbackPercent: z.string().regex(/^$|^\d{1,2}$/, "Целое 0–99 или пусто"),
+    releaseYear: z.string().regex(/^$|^\d{4}$/, "Год или пусто"),
+    /** Card rating 0–5. */
+    rating: z.string().regex(/^$|^[0-5](?:[.,]\d)?$/, "От 0 до 5 или пусто"),
+    /** Subscription fields: one-liner, group slug, includes slugs. */
+    tagline: z.string().trim().max(300, "Не длиннее 300 символов"),
+    /** Registry slug picked from the «Группа подписки» list. */
+    group: z.string().trim().max(100),
+    /** Multi-select of registry slugs («Что входит в подписку»). */
+    features: z.array(z.string().max(100)).max(50),
+    searchAliases: z.string().max(400, "Не длиннее 400 символов"),
+    /** Game PC system requirements: two tiers × five fixed rows. Empty
+     * strings are dropped before submit; both tiers empty = no block. */
+    systemRequirements: z.object({
+      minimum: z.object({
+        os: z.string().max(100, "Не длиннее 100 символов"),
+        cpu: z.string().max(150, "Не длиннее 150 символов"),
+        gpu: z.string().max(150, "Не длиннее 150 символов"),
+        ram: z.string().max(50, "Не длиннее 50 символов"),
+        storage: z.string().max(50, "Не длиннее 50 символов"),
+      }),
+      recommended: z.object({
+        os: z.string().max(100, "Не длиннее 100 символов"),
+        cpu: z.string().max(150, "Не длиннее 150 символов"),
+        gpu: z.string().max(150, "Не длиннее 150 символов"),
+        ram: z.string().max(50, "Не длиннее 50 символов"),
+        storage: z.string().max(50, "Не длиннее 50 символов"),
+      }),
+    }),
     images: z.array(z.string().min(1)),
     priceRub: z
       .string()
@@ -52,6 +85,17 @@ export const productSchema = z
         }),
       )
       .max(100, "Не больше 100 номиналов"),
+    /** Product FAQ: Q/A rows shown in the form for create and edit; empty
+     * rows are dropped before the FAQ replace call. */
+    faq: z
+      .array(
+        z.object({
+          id: z.string(),
+          question: z.string().max(200, "Не длиннее 200 символов"),
+          answer: z.string().max(2000, "Не длиннее 2000 символов"),
+        }),
+      )
+      .max(20, "Не больше 20 вопросов"),
     categoryId: z.string().uuid("Выберите категорию"),
   })
   .superRefine((values, ctx) => {

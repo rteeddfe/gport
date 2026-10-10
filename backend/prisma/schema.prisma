@@ -54,6 +54,13 @@ enum DiscountType {
   FIXED
 }
 
+/// External OAuth identity providers (login-only — provider tokens are
+/// used once to resolve the identity and then discarded).
+enum OAuthProvider {
+  YANDEX
+  VK
+}
+
 enum PostStatus {
   DRAFT
   PUBLISHED
@@ -74,13 +81,13 @@ enum SupportTicketStatus {
 }
 
 model User {
-  id    String  @id @default(uuid()) @db.Uuid
-  email String  @unique
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
   /// Null = a passwordless account auto-created by guest checkout (email
   /// only, to hold the purchases). Registering with the same email claims
   /// the account by setting a password.
   passwordHash String?
-  name  String?
+  name         String?
   /// Profile avatar — an app path or an uploaded /files/:id URL (same
   /// convention as SiteSettings.logoUrl / product images).
   avatarUrl    String?
@@ -95,6 +102,80 @@ model User {
 
   refreshTokens RefreshToken[]
   orders        Order[]
+  challenges    RegisterChallenge[]
+  linkChallenges OAuthLinkChallenge[]
+  oauthIdentities OAuthIdentity[]
+  auditLogs     AuditLog[]
+}
+
+/// External login identity (M-OAUTH): the canonical key is the
+/// (provider, providerUserId) pair — email is an attribute for auditing
+/// and linking suggestions, never part of the identity. DB constraints:
+/// one external account maps to exactly one GPort User, and a User holds
+/// at most one identity per provider (link/re-link stays deterministic).
+model OAuthIdentity {
+  id             String        @id @default(uuid()) @db.Uuid
+  userId         String        @db.Uuid
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider       OAuthProvider
+  providerUserId String
+  /// Audit trail: the provider email at link time. Not used for matching.
+  emailAtLink    String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@unique([provider, providerUserId])
+  @@unique([userId, provider])
+  @@index([userId])
+}
+
+/// Mailbox-verification challenge for attaching an external OAuth
+/// identity (M-OAUTH-4) to an EXISTING GPort user (password or
+/// passwordless guest): a matching email alone never links. The four-way
+/// binding (userId, provider, providerUserId, email) is fixed server-side
+/// from the verified OAuth callback — the frontend may only present the
+/// opaque challenge id and the code. Same crypto as RegisterChallenge:
+/// only the SHA-256 hash of the code is stored.
+model OAuthLinkChallenge {
+  id             String        @id @default(uuid()) @db.Uuid
+  userId         String        @db.Uuid
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider       OAuthProvider
+  providerUserId String
+  email          String
+  codeHash       String        @unique
+  expiresAt      DateTime
+  attempts       Int           @default(0)
+  consumedAt     DateTime?
+  createdAt      DateTime      @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+/// One-time claim challenge (M-3): registering an email that holds a
+/// passwordless (guest-checkout) account requires a code sent to that
+/// mailbox BEFORE the password is set — knowing the email alone must not
+/// grant the account and its attached orders. Only the SHA-256 hash of
+/// the code and the bcrypt password chosen at register time are stored.
+model RegisterChallenge {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @db.Uuid
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email        String
+  codeHash     String    @unique
+  /// The claimer-chosen password, held as bcrypt until the code proves
+  /// the mailbox — applied to the User atomically with consumption.
+  passwordHash String
+  name         String?
+  expiresAt    DateTime
+  consumedAt   DateTime?
+  attempts     Int       @default(0)
+  createdAt    DateTime  @default(now())
+
+  @@index([userId])
+  // Expired unconsumed rows are dead weight; new challenges replace them.
+  @@index([expiresAt])
 }
 
 /// Opaque session tokens (only the SHA-256 hash is stored). Rotation on
@@ -124,50 +205,98 @@ model Category {
   name        String   @unique
   slug        String   @unique
   description String?
+  /// Fixed storefront section: games | subscriptions | currency (the
+  /// constants live in code) — drives the routes and the product form
+  /// «Раздел» select. Not freely editable.
+  type        String   @default("")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   products Product[]
 }
 
+/// Storefront list registry (the admin «Категории» → «Списки» tab): fixed
+/// list kinds (tags, platform, genre, consoles, subscription-group,
+/// subscription-includes — constants in code), admin-managed values.
+/// The product form selects read these; product columns store the slugs
+/// and the catalog filters operate on them.
+model ListValue {
+  id        String   @id @default(uuid()) @db.Uuid
+  /// One of the fixed LIST_KINDS.
+  kind      String
+  name      String
+  /// Latin lowercase slug stored on the product and used in filter URLs.
+  slug      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([kind, name])
+  @@unique([kind, slug])
+  @@index([kind])
+}
+
 model Product {
-  id            String        @id @default(uuid()) @db.Uuid
-  title         String
-  slug          String        @unique
-  description   String?
-  instruction   String?
-  region        String?
-  platform      String?
-  genre         String[]
-  localization  String?
-  ageRating     String?
-  images        String[]
-  priceCents    Int
-  oldPriceCents Int?
+  id                 String            @id @default(uuid()) @db.Uuid
+  title              String
+  slug               String            @unique
+  description        String?
+  /// Activation instructions («Активация ключа Steam» section).
+  instruction        String?
+  /// Storefront platform facet: steam | playstation | xbox | nintendo.
+  platform           String?
+  genre              String[]
+  images             String[]
+  priceCents         Int
+  oldPriceCents      Int?
+  /// Cached discount percent (0 when oldPriceCents is null), recomputed
+  /// by the service whenever priceCents/oldPriceCents are written — the
+  /// catalog «По скидке» sort filters on this column.
+  discountPercent    Int               @default(0)
+  /// Cashback returned to the buyer balance, percent 0..99.
+  cashbackPercent    Int               @default(0)
+  releaseYear        Int?
+  /// Editorial rating 0..5 shown on the card.
+  rating             Float?
+  /// Console generations («PlayStation 5», «Nintendo Switch 2»…).
+  consoles           String[]          @default([])
+  /// Merch badges: "hit" (Хит), "new" (Новинка). One badge picked from
+  /// the category's badge options.
+  tags               String[]          @default([])
+  /// Subscription service one-liner (catalog subtitle).
+  tagline            String?
+  /// Subscription group: gaming | ai | media | social.
+  group              String?
+  /// «Что входит» bullets of a subscription service.
+  features           String[]          @default([])
+  /// Folk search terms («пс плюс», «гпт») matched by catalog search.
+  searchAliases      String[]          @default([])
+  /// Game system requirements, fixed shape:
+  /// { minimum?, recommended?: { os, cpu, gpu, ram, storage } } —
+  /// edited in the admin product form, rendered on the detail page.
+  systemRequirements Json?
   /// Available quantity (digital keys/licenses) in stock.
-  stock         Int           @default(0)
-  currency      String        @default("RUB")
-  status        ProductStatus @default(DRAFT)
+  stock              Int               @default(0)
+  status             ProductStatus     @default(DRAFT)
   /// Product kind — drives the checkout form and fulfillment rules.
-  kind          ProductKind   @default(GAME_KEY)
+  kind               ProductKind       @default(GAME_KEY)
   /// TOPUP_AMOUNT only: the buyer-entered amount range (kopecks).
-  minValue      Int?
-  maxValue      Int?
+  minValue           Int?
+  maxValue           Int?
   /// Service commission on top of the credited amount, percent 0..50
   /// (TOPUP_* kinds; 0 = no fee). The backend adds it to the order total.
-  commissionPercent Int @default(0)
+  commissionPercent  Int               @default(0)
   /// How the paid order is fulfilled (codes vs operator).
-  creditingMode CreditingMode @default(AUTO_CODE)
+  creditingMode      CreditingMode     @default(AUTO_CODE)
   /// Checkout account-field config for top-ups («Логин Steam», Player ID).
-  accountFieldKind  AccountFieldKind?
-  accountFieldLabel String?
-  accountFieldHint  String?
+  accountFieldKind   AccountFieldKind?
+  accountFieldLabel  String?
+  accountFieldHint   String?
   /// Source-system id of an imported product (idempotent re-imports).
-  externalId    String?       @unique
-  categoryId    String        @db.Uuid
-  category      Category      @relation(fields: [categoryId], references: [id])
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  externalId         String?           @unique
+  categoryId         String            @db.Uuid
+  category           Category          @relation(fields: [categoryId], references: [id])
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
   orderItems OrderItem[]
   keys       ProductKey[]
@@ -185,9 +314,9 @@ model Product {
 /// A purchasable nominal of a TOPUP_NOMINAL product («60 UC», «1 месяц»):
 /// its own price; labels/values are snapshots into the order item.
 model ProductVariant {
-  id            String  @id @default(uuid()) @db.Uuid
-  productId     String  @db.Uuid
-  product       Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  id            String   @id @default(uuid()) @db.Uuid
+  productId     String   @db.Uuid
+  product       Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   /// Display label of the nominal («60 UC», «1 месяц», «+1000 ₽»).
   label         String
   /// Numeric value in the product's unit (60 UC → 60); optional when the
@@ -197,7 +326,7 @@ model ProductVariant {
   unit          String?
   priceCents    Int
   oldPriceCents Int?
-  sortOrder     Int     @default(0)
+  sortOrder     Int      @default(0)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -207,12 +336,12 @@ model ProductVariant {
 /// Per-product FAQ rendered on the product page (below the description)
 /// and managed in the admin product form.
 model ProductFaq {
-  id        String  @id @default(uuid()) @db.Uuid
-  productId String  @db.Uuid
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  id        String   @id @default(uuid()) @db.Uuid
+  productId String   @db.Uuid
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   question  String
   answer    String
-  sortOrder Int     @default(0)
+  sortOrder Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -233,6 +362,8 @@ model PromoCode {
   minSubtotalCents Int?
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
+
+  orders Order[]
 }
 
 enum OrderStatus {
@@ -247,22 +378,29 @@ enum OrderStatus {
 /// that named an email of an existing REGISTERED account — the purchase
 /// is delivered by letter and never attaches to someone else's profile.
 model Order {
-  id           String      @id @default(uuid()) @db.Uuid
-  userId       String?     @db.Uuid
-  user         User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  status       OrderStatus @default(AWAITING_PAYMENT)
-  totalCents   Int
-  currency     String      @default("RUB")
+  id            String      @id @default(uuid()) @db.Uuid
+  userId        String?     @db.Uuid
+  user          User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status        OrderStatus @default(AWAITING_PAYMENT)
+  totalCents    Int
+  currency      String      @default("RUB")
   /// Buyer email snapshot — the letter recipient even without an account.
-  email        String?
+  email         String?
   /// Payment provider id ("test" = the emulator; real acquirers later).
-  provider     String
+  provider      String
   /// Payment session token at the provider — the emulator page address
   /// part and the webhook capability. Unique per order.
-  paymentToken String?     @unique
-  paidAt       DateTime?
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  paymentToken  String?     @unique
+  /// Applied promo snapshot: the code string + resolved discount stay on
+  /// the order even if the PromoCode row is later edited or removed.
+  promoCodeId   String?     @db.Uuid
+  promoCode     String?
+  discountCents Int         @default(0)
+  paidAt        DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  promo PromoCode? @relation(fields: [promoCodeId], references: [id], onDelete: SetNull)
 
   items  OrderItem[]
   emails EmailLog[]
@@ -274,21 +412,21 @@ model Order {
 }
 
 model OrderItem {
-  id             String  @id @default(uuid()) @db.Uuid
-  orderId        String  @db.Uuid
-  order          Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  productId      String  @db.Uuid
-  product        Product @relation(fields: [productId], references: [id])
+  id                String  @id @default(uuid()) @db.Uuid
+  orderId           String  @db.Uuid
+  order             Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId         String  @db.Uuid
+  product           Product @relation(fields: [productId], references: [id])
   /// Snapshot at purchase time — the product title/price may change later.
-  productTitle   String
-  unitPriceCents Int
-  quantity       Int
+  productTitle      String
+  unitPriceCents    Int
+  quantity          Int
   /// Snapshot of the chosen nominal (TOPUP_NOMINAL) — null for keys.
-  variantLabel   String?
+  variantLabel      String?
   /// TOPUP_AMOUNT only: the buyer-entered amount snapshot (kopecks).
-  amountCents    Int?
+  amountCents       Int?
   /// Snapshot of the service commission charged on top of amountCents.
-  commissionCents Int?
+  commissionCents   Int?
   /// Where to credit: Steam login, player ID, recipient email…
   accountIdentifier String?
 
@@ -327,6 +465,47 @@ model EmailLog {
   @@index([createdAt])
 }
 
+/// Kinds of external system integrations managed from the admin panel
+/// (M-INTEGRATIONS). New kinds are added as their integrations land.
+enum IntegrationType {
+  OAUTH
+  PAYMENT
+  EMAIL
+  CAPTCHA
+}
+
+/// Integration providers configurable from the admin panel. Only the OAuth
+/// entry points (YANDEX, VK) are wired in M-INTEGRATIONS-1; payment, SMTP
+/// and captcha providers join as their integrations are built. The field
+/// shape per provider is defined by the code-side integration registry —
+/// the DB stays shape-stable when providers are added.
+enum IntegrationProvider {
+  YANDEX
+  VK
+}
+
+/// Per-provider integration configuration (M-INTEGRATIONS-1). `config`
+/// holds non-secret values (e.g. clientId); EVERY value in `secrets` is an
+/// AES-256-GCM envelope produced by IntegrationSecretService — plaintext
+/// secrets never reach the DB, the API responses or the logs. The runtime
+/// (OAuth etc.) still reads its ENV configuration; this table is the
+/// admin-managed settings foundation (M-INTEGRATIONS-2 wires the runtime).
+model Integration {
+  id        String              @id @default(uuid()) @db.Uuid
+  provider  IntegrationProvider @unique
+  type      IntegrationType
+  enabled   Boolean             @default(false)
+  /// Non-secret configuration values ({ clientId: "…" }), validated
+  /// against the provider registry — secret names are rejected here.
+  config    Json                @default("{}")
+  /// Encrypted secret values ({ clientSecret: "v1.…" }): AES-256-GCM
+  /// envelopes only. Returned as `clientSecretConfigured: true`, never
+  /// decrypted for the API layer.
+  secrets   Json                @default("{}")
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+}
+
 /// Singleton row (id = 1): acquiring configuration. testEnabled runs the
 /// emulator; providers holds per-acquirer { enabled, config } for the
 /// real integrations (fields defined by PAYMENT_PROVIDERS).
@@ -342,56 +521,84 @@ model PaymentSettings {
 /// metadata, robots.txt, PWA manifest) — only writes are admin-gated.
 model SiteSettings {
   id                      Int      @id @default(1)
-  siteName                String   @default("GPort")
-  supportEmail            String   @default("support@gport.ru")
-  logoUrl                 String   @default("/logo2.png")
+  siteName                String   @default("")
+  /// Short line under/beside the logo («магазин цифровых товаров»).
+  descriptor              String   @default("")
+  /// Footer brand paragraph (longer text under the logo column).
+  descriptorFooter        String   @default("")
+  supportEmail            String   @default("")
+  /// Empty = no logo rendered anywhere (the admin uploads one).
+  logoUrl                 String   @default("")
   /// Array of { label, url, iconUrl? } — footer social circles.
   socials                 Json     @default("[]")
-  seoTitle                String   @default("GPort — магазин цифровых товаров")
-  seoDescription          String   @default("Интернет-магазин цифровых игровых товаров и услуг")
+  /// Header menu constructor: [{ icon, label, href }] (icon = preset name).
+  headerMenu              Json     @default("[]")
+  /// Footer menu constructor: [{ title, items: [{ label, href }] }].
+  footerMenus             Json     @default("[]")
+  seoTitle                String   @default("")
+  seoDescription          String   @default("")
   ogImageUrl              String?
-  faviconUrl              String   @default("/icons/icon.svg")
+  faviconUrl              String   @default("")
   /// Raw robots.txt body served verbatim by the frontend route handler.
-  robotsTxt               String   @default("User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /dashboard\n")
-  manifestName            String   @default("GPort — магазин цифровых товаров")
-  manifestShortName       String   @default("GPort")
+  robotsTxt               String   @default("")
+  manifestName            String   @default("")
+  manifestShortName       String   @default("")
   manifestThemeColor      String   @default("#0B0D12")
   manifestBackgroundColor String   @default("#0B0D12")
-  manifestIcon192Url      String   @default("/icons/icon-192.png")
-  manifestIcon512Url      String   @default("/icons/icon-512.png")
+  manifestIcon192Url      String   @default("")
+  manifestIcon512Url      String   @default("")
   /// Yandex Metrika counter number (digits only); empty = counter disabled.
   metrikaCounterId        String   @default("")
   /// webvisor option of the Metrika counter init.
   metrikaWebvisor         Boolean  @default(false)
   /// Yandex Webmaster verification — the meta tag or just its content value.
   yandexVerification      String   @default("")
+  /// Legal entity requisites: documents, the footer block and payment-provider
+  /// moderation («Настройки сайта → Общие» → «Реквизиты компании»).
+  legalName               String   @default("")
+  legalInn                String   @default("")
+  legalOgrn               String   @default("")
+  legalAddress            String   @default("")
+  legalPhone              String   @default("")
   updatedAt               DateTime @updatedAt
 }
 
 /// Singleton row (id = 1): hero-banner texts of the storefront homepage.
 model HomeContent {
-  id          Int      @id @default(1)
-  kicker      String   @default("Пополнение сервисов")
-  title       String   @default("Пополняй любимые игры")
-  titleAccent String   @default("по выгодному курсу")
-  subtitle    String   @default("")
-  ctaLabel    String   @default("Каталог игр")
-  ctaHref     String   @default("/products")
-  /// Exactly four advantage tile texts (01–04).
-  tiles       Json     @default("[\"Без ограничений, регистрации и верификации\", \"Без скрытых комиссий и платежей\", \"Моментальная доставка после оплаты\", \"Много способов оплаты\"]")
+  id              Int      @id @default(1)
+  kicker          String   @default("")
+  title           String   @default("")
+  titleAccent     String   @default("")
+  subtitle        String   @default("")
+  /// Primary CTA (filled style, wallet icon); empty = button hidden.
+  ctaPrimaryLabel String   @default("")
+  ctaPrimaryHref  String   @default("")
+  /// Secondary CTA (outline style); empty = button hidden.
+  ctaLabel        String   @default("")
+  ctaHref         String   @default("")
+  /// Advantage tile texts (01–04); empty rows are skipped at render.
+  tiles           Json     @default("[]")
   /// Admin-managed cards of the home top-up wall: [{ imageUrl, href }].
-  /// Empty array = the wall falls back to the built-in service tiles.
-  wallCards     Json     @default("[]")
+  /// Empty array = the wall does not render.
+  wallCards       Json     @default("[]")
   /// Admin-managed cards of the hero cylinder carousel: [{ imageUrl, href }].
-  /// Empty array = the carousel keeps its built-in placeholder covers.
-  carouselCards Json     @default("[]")
+  /// Empty array = the carousel does not render.
+  carouselCards   Json     @default("[]")
   /// Home top-up FORM services: [{ productId, iconUrl? }] picked from the
   /// top-up products. Empty array = the form block hides.
-  topupServices Json     @default("[]")
+  topupServices   Json     @default("[]")
   /// Home service WALL tiles: [{ productId, iconUrl? }] (block 3).
   /// Empty array = the wall falls back to the built-in service tiles.
-  serviceCards  Json     @default("[]")
-  updatedAt     DateTime @updatedAt
+  serviceCards    Json     @default("[]")
+  /// Trust block before the news: stat cards [{ label, prefix, value,
+  /// description }]. Empty array = the stat cards do not render.
+  statCards       Json     @default("[]")
+  /// Trust block social badge heading; empty = the community card hides.
+  communityLabel  String   @default("")
+  /// Community cards [{ brand, name, description, usersCount, usersLabel,
+  /// url }]; brand picks the built-in icon/color. Empty = block hides.
+  communityCards  Json     @default("[]")
+  updatedAt       DateTime @updatedAt
 }
 
 /// Legal documents rendered on /policies/[slug]; content is sanitized
@@ -429,7 +636,7 @@ model Post {
 /// land unassigned; admins move them through the pipeline. `ip` powers the
 /// anti-spam limits (same model as reviews) and never leaves the admin area.
 model SupportTicket {
-  id        String             @id @default(uuid()) @db.Uuid
+  id        String              @id @default(uuid()) @db.Uuid
   /// Optional display name from the form.
   name      String?
   /// Where to answer: email, @telegram, phone — free-form by design.
@@ -438,12 +645,45 @@ model SupportTicket {
   status    SupportTicketStatus @default(NEW)
   /// Rate-limiter + spam moderation context, never exposed publicly.
   ip        String?
-  createdAt DateTime           @default(now())
-  updatedAt DateTime           @updatedAt
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
 
   @@index([status, createdAt])
   @@index([ip, createdAt])
   @@index([createdAt])
+}
+
+/// Manual and auto bans of abusive IPs (the admin «Состояние» panel).
+/// The in-memory ban cache in the traffic module reloads from this table
+/// every 30 seconds and immediately after an admin change.
+model BlockedIp {
+  id        String    @id @default(uuid()) @db.Uuid
+  /// Exact IP (v4/v6) or an IPv4 CIDR subnet («185.220.0.0/16»).
+  ip        String    @unique
+  reason    String?
+  /// null = permanent ban.
+  expiresAt DateTime?
+  /// Admin email; "system" for auto-bans.
+  createdBy String    @default("system")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([expiresAt])
+}
+
+/// Anti-DDoS thresholds (singleton id = 1), edited in the «Состояние» tab.
+model SecuritySettings {
+  id                   Int      @id @default(1)
+  /// Ban automatically when an IP exceeds the threshold below.
+  autoBanEnabled       Boolean  @default(false)
+  /// Ban an IP when it sends more than this many requests…
+  banThresholdRequests Int      @default(240)
+  /// …within this window (seconds).
+  banWindowSeconds     Int      @default(60)
+  /// …for this many minutes (0 = permanent ban).
+  banDurationMinutes   Int      @default(30)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 }
 
 /// Storefront reviews submitted from the public form. Every submission
@@ -490,4 +730,34 @@ model UploadedFile {
   size      Int
   data      Bytes
   createdAt DateTime @default(now())
+}
+
+/// Server-side audit log (M-AUDIT-1): append-only record of critical
+/// admin/security mutations. Created ONLY by AuditService from the trusted
+/// server-side auth context (never from request body/query); metadata is
+/// sanitized server-side and MUST NOT contain secrets, credentials,
+/// tokens, OAuth codes, PKCE verifiers or payment data. Append-only by
+/// policy: the application never updates or deletes rows, no updatedAt.
+model AuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  /// Null for anonymous security events; SetNull keeps the log when the
+  /// actor account is later deleted.
+  actorUserId String?  @db.Uuid
+  actorUser   User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  /// Role snapshot at action time — historical roles are NOT derived
+  /// from the current User row.
+  actorRole   Role?
+  action      String
+  entityType  String
+  entityId    String?
+  /// Sanitized structured data only — see AuditService sanitization.
+  metadata    Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([entityType, entityId, createdAt])
+  @@index([action, createdAt])
 }

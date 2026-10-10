@@ -11,6 +11,7 @@ export const ADMIN_PERMISSION_LABELS: Record<AdminPermission, string> = {
   reviews: "Отзывы",
   "promo-codes": "Промокоды",
   support: "Обращения",
+  integrations: "Интеграции",
 };
 
 export const ADMIN_PERMISSION_ORDER: AdminPermission[] = [
@@ -21,6 +22,7 @@ export const ADMIN_PERMISSION_ORDER: AdminPermission[] = [
   "reviews",
   "promo-codes",
   "support",
+  "integrations",
 ];
 
 /** Nav subset visible to the session: permission items need the matching

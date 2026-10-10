@@ -17,20 +17,10 @@ import type { HomeWallCard } from "@/types/api";
  * globals.css.
  *
  * Cards are admin-managed (settings → «Главная страница» → carousel
- * cards: image + link); the built-in placeholder covers render while
- * the list is empty — they are NOT links (placeholder art has no
- * destination).
+ * cards: image + link); nothing is configured — the carousel does not
+ * render (the old placeholder covers are gone with the hardcoded
+ * content).
  */
-const PLACEHOLDERS = [
-  "/games/pubg-mobile.jpg",
-  "/games/genshin-impact.jpg",
-  "/games/roblox.jpg",
-  "/games/valorant.jpg",
-  "/games/delta-force.jpg",
-  "/games/minecraft-minecoins.jpg",
-  "/games/arena-breakout.jpg",
-  "/games/blood-strike.jpg",
-];
 
 /** 10×10 violet→cyan JPEG: the blur placeholder for the low-quality
  * reflection copies (path-based images need an explicit blurDataURL). */
@@ -42,10 +32,9 @@ const REFLECT_BLUR =
 const CARD_SIZES = "(min-width: 1024px) 144px, 112px";
 
 export function HeroCarouselCylinder({ cards }: { cards?: HomeWallCard[] }) {
-  const items =
-    cards && cards.length > 0
-      ? cards.map((card) => ({ src: card.imageUrl, href: card.href }))
-      : PLACEHOLDERS.map((src) => ({ src, href: null }));
+  // Nothing configured — nothing rendered (blank store by design).
+  if (!cards || cards.length === 0) return null;
+  const items = cards.map((card) => ({ src: card.imageUrl, href: card.href }));
 
   return (
     <div

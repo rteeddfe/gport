@@ -6,14 +6,16 @@ import { useState } from "react";
 import { cn } from "cn";
 
 /** Product page gallery: main cover + thumbnail strip when there are
- * several images. Store-logo fallback on a neon wash for products
- * without covers. */
+ * several images. Settings-logo fallback on a neon wash for products
+ * without covers (empty logo = wash only). */
 export function ProductGallery({
   images,
   title,
+  logoUrl = "",
 }: {
   images: string[];
   title: string;
+  logoUrl?: string;
 }) {
   const [active, setActive] = useState(0);
   const cover = images[active];
@@ -35,13 +37,16 @@ export function ProductGallery({
             aria-hidden
             className="absolute inset-0 grid place-items-center bg-[radial-gradient(20rem_16rem_at_50%_20%,rgb(139_92_246/0.25),transparent_70%),radial-gradient(16rem_14rem_at_80%_90%,rgb(85_221_229/0.15),transparent_70%)]"
           >
-            <Image
-              src="/logo2.png"
-              alt=""
-              width={2400}
-              height={1569}
-              className="relative h-20 w-auto opacity-90"
-            />
+            {logoUrl ? (
+              <Image
+                src={logoUrl}
+                alt=""
+                width={2400}
+                height={1569}
+                unoptimized={logoUrl.toLowerCase().endsWith(".svg")}
+                className="relative h-20 w-auto object-contain opacity-90"
+              />
+            ) : null}
           </div>
         )}
       </div>

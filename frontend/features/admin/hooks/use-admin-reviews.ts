@@ -23,9 +23,11 @@ export function useAdminReviewMutations() {
   const queryClient = useQueryClient();
 
   const invalidate = () => {
-    // The public homepage/reviews lists read the same rows server-side.
+    // The public homepage/reviews lists read the same rows server-side;
+    // «admin-pending» keeps the sidebar «новые отзывы» chip in sync.
     void revalidateStorefrontTags(["reviews"]);
     queryClient.invalidateQueries({ queryKey: ["admin-reviews"] });
+    queryClient.invalidateQueries({ queryKey: ["admin-pending"] });
   };
 
   const update = useMutation({

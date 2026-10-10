@@ -10,6 +10,7 @@ jest.mock("next/navigation", () => ({
 const signInMock = jest.fn();
 jest.mock("@/services/auth.service", () => ({
   signIn: (...args: unknown[]) => signInMock(...args),
+  verifyOAuthLink: jest.fn(),
 }));
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -25,9 +26,9 @@ describe("SignInForm", () => {
     renderWithProviders(<SignInForm />);
 
     await user.type(screen.getByLabelText(/email/i), "not-an-email");
-    await user.click(screen.getByRole("button", { name: /sign in/i }));
+    await user.click(screen.getByRole("button", { name: /войти/i }));
 
-    expect(await screen.findByText(/enter a valid email/i)).toBeInTheDocument();
+    expect(await screen.findByText(/введите корректный email/i)).toBeInTheDocument();
     expect(signInMock).not.toHaveBeenCalled();
   });
 
@@ -40,8 +41,8 @@ describe("SignInForm", () => {
     renderWithProviders(<SignInForm />);
 
     await user.type(screen.getByLabelText(/email/i), "a@b.co");
-    await user.type(screen.getByLabelText(/password/i), "secret123");
-    await user.click(screen.getByRole("button", { name: /sign in/i }));
+    await user.type(screen.getByLabelText("Пароль"), "secret123");
+    await user.click(screen.getByRole("button", { name: /войти/i }));
 
     await waitFor(() => {
       expect(signInMock).toHaveBeenCalledWith(

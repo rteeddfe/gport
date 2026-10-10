@@ -34,9 +34,18 @@ function makeUser(overrides: Partial<User> = {}): User {
   };
 }
 
+const AUDIT = {
+  actor: { id: OTHER_ID, role: 'SUPER_ADMIN' },
+  request: { ipAddress: '127.0.0.1', userAgent: 'vitest' },
+};
+
 function makeService() {
   const prisma = makePrismaMock();
-  return { service: new UsersService(prisma as never), prisma };
+  prisma.$transaction = vi.fn(async (work: (tx: unknown) => unknown) =>
+    work(prisma as never),
+  );
+  const auditService = { log: vi.fn(async () => {}), logInTransaction: vi.fn(async () => {}) };
+  return { service: new UsersService(prisma as never, auditService as never), prisma, auditService };
 }
 
 describe('UsersService.findMany', () => {
@@ -92,6 +101,7 @@ describe('UsersService.updateAccess', () => {
       USER_ID,
       { role: 'ADMIN', permissions: ['posts'] },
       OTHER_ID,
+      AUDIT,
     );
 
     expect(prisma.user.update).toHaveBeenCalledWith({
@@ -138,7 +148,7 @@ describe('UsersService.remove', () => {
     const { service, prisma } = makeService();
     prisma.user.findUnique.mockResolvedValue(makeUser());
 
-    await service.remove(USER_ID, OTHER_ID);
+    await service.remove(USER_ID, OTHER_ID, AUDIT);
 
     expect(prisma.user.delete).toHaveBeenCalledWith({ where: { id: USER_ID } });
   });
@@ -147,7 +157,7 @@ describe('UsersService.remove', () => {
     const { service, prisma } = makeService();
     prisma.user.findUnique.mockResolvedValue(null);
 
-    await expect(service.remove(USER_ID, OTHER_ID)).rejects.toMatchObject({
+    await expect(service.remove(USER_ID, OTHER_ID, AUDIT)).rejects.toMatchObject({
       status: 404,
     });
   });
@@ -156,7 +166,7 @@ describe('UsersService.remove', () => {
     const { service, prisma } = makeService();
     prisma.user.findUnique.mockResolvedValue(makeUser());
 
-    await expect(service.remove(USER_ID, USER_ID)).rejects.toMatchObject({
+    await expect(service.remove(USER_ID, USER_ID, AUDIT)).rejects.toMatchObject({
       status: 400,
     });
   });
@@ -165,7 +175,7 @@ describe('UsersService.remove', () => {
     const { service, prisma } = makeService();
     prisma.user.findUnique.mockResolvedValue(makeUser({ role: 'SUPER_ADMIN' }));
 
-    await expect(service.remove(USER_ID, OTHER_ID)).rejects.toMatchObject({
+    await expect(service.remove(USER_ID, OTHER_ID, AUDIT)).rejects.toMatchObject({
       status: 400,
     });
   });
@@ -176,7 +186,7 @@ describe('UsersService.revokeAllSessions', () => {
     const { service, prisma } = makeService();
     prisma.user.findUnique.mockResolvedValue(makeUser());
 
-    await service.revokeAllSessions(USER_ID);
+    await service.revokeAllSessions(USER_ID, AUDIT);
 
     expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
       where: { userId: USER_ID, revokedAt: null },
@@ -200,7 +210,7 @@ describe('UsersService.revokeSession', () => {
     prisma.refreshToken.updateMany.mockResolvedValue({ count: 1 });
 
     await expect(
-      service.revokeSession(USER_ID, '00000000-0000-0000-0000-0000000000aa'),
+      service.revokeSession(USER_ID, '00000000-0000-0000-0000-0000000000aa', AUDIT),
     ).resolves.toBeUndefined();
   });
 
@@ -209,7 +219,7 @@ describe('UsersService.revokeSession', () => {
     prisma.refreshToken.updateMany.mockResolvedValue({ count: 0 });
 
     await expect(
-      service.revokeSession(USER_ID, '00000000-0000-0000-0000-0000000000aa'),
+      service.revokeSession(USER_ID, '00000000-0000-0000-0000-0000000000aa', AUDIT),
     ).rejects.toMatchObject({ status: 404 });
   });
 });

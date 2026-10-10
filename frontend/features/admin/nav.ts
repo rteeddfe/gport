@@ -1,12 +1,12 @@
 import {
   Activity,
-  BarChart3,
   FolderTree,
   LayoutDashboard,
   MessageSquareQuote,
   Newspaper,
   Package,
   Percent,
+  Plug,
   ReceiptText,
   Settings,
   Store,
@@ -44,10 +44,10 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     icon: LayoutDashboard,
   },
   {
-    href: "/admin/analytics",
-    label: "Аналитика",
-    description: "Яндекс Метрика, Вебвизор и подтверждение в Вебмастере",
-    icon: BarChart3,
+    href: "/admin/integrations",
+    label: "Интеграции",
+    description: "Вход через Яндекс ID / VK ID, Метрика, платёжные провайдеры и внешние сервисы",
+    icon: Plug,
     requiredRole: "SUPER_ADMIN",
   },
   {
