@@ -1,0 +1,55 @@
+# Draft Render blueprint (uncommitted). Deploys only the web services:
+# the Postgres lives external (Supabase/Aiven/whatever you choose),
+# DATABASE_URL is supplied at deploy time (sync: false prompts for it).
+services:
+  # Storefront (SSR). Custom domain attaches here; /api is proxied to the
+  # backend by next.config.ts rewrites, so cookies stay first-party.
+  - type: web
+    name: gport-frontend
+    runtime: node
+    rootDir: frontend
+    buildCommand: pnpm install --frozen-lockfile && pnpm build
+    startCommand: pnpm start
+    healthCheckPath: /api/health
+    plan: free
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Build-time value: https://<backend-service>.onrender.com/api
+      - key: NEXT_PUBLIC_API_URL
+        sync: false
+      - key: NEXT_PUBLIC_SITE_URL
+        sync: false
+      - key: PAYMENTS_WEBHOOK_SECRET
+        sync: false
+
+  # NestJS API served from backend/Dockerfile (multi-stage, node:24-alpine).
+  - type: web
+    name: gport-backend
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: Dockerfile
+    healthCheckPath: /api/health
+    plan: free
+    preDeployCommand: "pnpm prisma migrate deploy"
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+      # Frontend and API are on different hosts (onrender.com), so cookies
+      # must be SameSite=None + Secure.
+      - key: COOKIE_SAME_SITE
+        value: None
+      # One reverse-proxy hop in front (Render ingress) — rate limiter
+      # must trust the forwarded client IP.
+      - key: TRUST_PROXY
+        value: "1"
+      - key: INTEGRATIONS_ENCRYPTION_KEY
+        sync: false
+      - key: PAYMENTS_WEBHOOK_SECRET
+        sync: false
